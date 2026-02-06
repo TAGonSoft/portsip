@@ -10,17 +10,45 @@
 # To learn more about Podspec syntax: http://guides.cocoapods.org/syntax/podspec.html
 #
 
-# Display setup reminder.
-# Note: We cannot reliably detect the consuming app's framework location from here
-# (paths differ between path dependencies and pub.dev dependencies). The actual
-# framework resolution happens at compile time via FRAMEWORK_SEARCH_PATHS.
-Pod::UI.puts <<-INFO
+# The developer places the xcframework at their app's ios/Frameworks/ directory.
+# CocoaPods needs vendored_frameworks to properly handle xcframeworks (architecture
+# selection, module maps, embedding). We create a symlink from SDK/ to the app's
+# Frameworks/ directory so vendored_frameworks can find it.
 
-  [portsip] The PortSIP VoIP SDK is NOT bundled with this plugin.
-  [portsip] Ensure PortSIPVoIPSDK.xcframework is placed at ios/Frameworks/
-  [portsip] and embedded in Xcode (Embed & Sign). See README for details.
+sdk_dir = File.join(__dir__, 'SDK')
+sdk_framework = File.join(sdk_dir, 'PortSIPVoIPSDK.xcframework')
 
-INFO
+unless File.exist?(sdk_framework)
+  # During pod install, Dir.pwd is the directory containing the Podfile (app's ios/ directory)
+  app_framework = File.join(Dir.pwd, 'Frameworks', 'PortSIPVoIPSDK.xcframework')
+
+  if File.exist?(app_framework)
+    Dir.mkdir(sdk_dir) unless Dir.exist?(sdk_dir)
+    source_abs = File.expand_path(app_framework)
+    File.symlink(source_abs, sdk_framework)
+    Pod::UI.puts "[portsip] Linked PortSIP SDK from: #{source_abs}"
+  else
+    Pod::UI.warn <<-WARNING
+
+  ════════════════════════════════════════════════════════════════════════════════
+  WARNING: PortSIP VoIP SDK framework not found!
+
+  The portsip plugin requires the PortSIP VoIP SDK to be placed at:
+
+    ios/Frameworks/PortSIPVoIPSDK.xcframework
+
+  Download the SDK from:
+    https://www.portsip.com/download-portsip-voip-sdk/
+
+  Then extract and copy PortSIPVoIPSDK.xcframework to your app's
+  ios/Frameworks/ directory.
+
+  The build will FAIL if the framework is not present.
+  ════════════════════════════════════════════════════════════════════════════════
+
+    WARNING
+  end
+end
 
 Pod::Spec.new do |s|
   s.name             = 'portsip'
@@ -45,24 +73,21 @@ Pod::Spec.new do |s|
   s.platform = :ios, '13.0'
   s.swift_version = '5.0'
 
-  # NOTE: vendored_frameworks is intentionally removed.
-  # The PortSIP VoIP SDK must be provided by the consuming app.
-  # Developers must place PortSIPVoIPSDK.xcframework in their app's ios/Frameworks/ directory
-  # and embed it in Xcode (Embed & Sign).
+  # The xcframework is symlinked from the app's ios/Frameworks/ directory during pod install.
+  # vendored_frameworks is required for CocoaPods to properly handle xcframeworks
+  # (architecture selection, module maps, and embedding into the app bundle).
+  s.vendored_frameworks = 'SDK/PortSIPVoIPSDK.xcframework'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
     'OTHER_LDFLAGS' => '-ObjC',
-    # Allow the plugin to find PortSIPVoIPSDK.xcframework in the app's ios/Frameworks directory.
-    # $(PODS_ROOT)/.. resolves to the consuming app's ios/ directory.
-    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "$(PODS_ROOT)/../Frameworks"',
   }
 
   s.user_target_xcconfig = {
     'OTHER_LDFLAGS' => '-ObjC'
   }
 
-  s.frameworks = 'VideoToolbox', 'AVFoundation', 'AudioToolbox', 'CoreMedia', 'CoreVideo', 'MetalKit', 'CallKit'
+  s.frameworks = 'VideoToolbox', 'AVFoundation', 'AudioToolbox', 'CoreMedia', 'CoreVideo', 'MetalKit', 'CallKit', 'Network'
   s.libraries = 'resolv', 'c++'
 end
