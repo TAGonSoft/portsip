@@ -1,8 +1,9 @@
 group = "com.tagonsoft.portsip"
 version = "1.0-SNAPSHOT"
 
-// SDK is shipped with the plugin
-def sdkJarPath = file("SDK/portsipvoipsdk.jar")
+// The PortSIP VoIP SDK JAR is NOT bundled with this plugin.
+// It must be provided by the consuming app at: android/app/libs/portsipvoipsdk.jar
+// See the README for setup instructions.
 
 buildscript {
     ext.kotlin_version = "2.1.0"
@@ -51,7 +52,14 @@ android {
     }
 
     dependencies {
-        implementation(files(sdkJarPath))
+        // compileOnly makes the SDK classes available at compile time for this plugin,
+        // but does NOT include the JAR in the plugin's output. The consuming app must
+        // add the JAR as an implementation dependency in their own build.gradle.
+        compileOnly fileTree(
+            dir: "${project.rootProject.projectDir}/app/libs",
+            include: ['portsipvoipsdk.jar']
+        )
+
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.mockito:mockito-core:5.0.0")
     }
@@ -66,5 +74,31 @@ android {
                showStandardStreams = true
             }
         }
+    }
+}
+
+// Validate that the SDK JAR exists in the consuming app's libs directory.
+gradle.projectsEvaluated {
+    def appLibsDir = file("${project.rootProject.projectDir}/app/libs")
+    def sdkJar = new File(appLibsDir, "portsipvoipsdk.jar")
+
+    if (!sdkJar.exists()) {
+        logger.warn("""
+════════════════════════════════════════════════════════════════════════════════
+WARNING: PortSIP VoIP SDK JAR not found!
+
+The portsip plugin requires the PortSIP VoIP SDK JAR to be placed at:
+
+  android/app/libs/portsipvoipsdk.jar
+
+Download the SDK from:
+  https://www.portsip.com/download-portsip-voip-sdk/
+
+Then copy portsipvoipsdk.jar to your app's android/app/libs/ directory
+and add it as a dependency in your app's build.gradle.
+
+The build will FAIL if the JAR is not present.
+════════════════════════════════════════════════════════════════════════════════
+""")
     }
 }

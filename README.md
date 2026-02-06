@@ -1,10 +1,27 @@
 # PortSIP Flutter Plugin
 
-A Flutter plugin that integrates the [PortSIP VoIP SDK](https://www.portsip.com/download-portsip-voip-sdk/), enabling SIP-based voice communications in your Flutter applications.
+> **⚠️ IMPORTANT DISCLAIMER**
+>
+> This is an **unofficial, community-developed** Flutter wrapper for the [PortSIP VoIP SDK](https://www.portsip.com/download-portsip-voip-sdk/).
+>
+> **This package is NOT affiliated with, endorsed by, or officially supported by PortSIP Solutions, Inc.**
+>
+> For official SDK documentation and support, please visit [portsip.com](https://www.portsip.com/).
+
+## License & Trademark
+
+- **PortSIP®** is a registered trademark of PortSIP Solutions, Inc.
+- The PortSIP SDK binaries used with this plugin are subject to [PortSIP's licensing terms](https://www.portsip.com/)
+- A valid **PortSIP license is required for production use** (testing works without a license)
+- This Flutter wrapper code is provided under the **MIT License**
+
+**THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.**
+
+A Flutter plugin that integrates the PortSIP VoIP SDK, enabling SIP-based voice communications in your Flutter applications.
 
 This plugin provides a cross-platform Dart API built on top of the native PortSIP SDK for iOS and Android, simplifying VoIP integration in Flutter apps.
 
-The PortSIP SDK binaries (V19.6.0) are **included with this plugin** - no manual SDK download required.
+> **Important:** The PortSIP SDK binaries are **not included** with this plugin. You must download the SDK (V19.6.0) from PortSIP and configure it in your app. See the [SDK Setup](#sdk-setup-required) section below.
 
 ## Resources
 
@@ -39,12 +56,47 @@ Add `portsip` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  portsip: ^0.0.1
+  portsip: ^0.0.2
 ```
+
+### SDK Setup (Required)
+
+This plugin requires the **PortSIP VoIP SDK V19.6.0** native binaries, which are **not included** with the plugin. You must download and configure them for each platform.
+
+**Download the SDK:**
+1. Visit the [PortSIP VoIP SDK download page](https://www.portsip.com/download-portsip-voip-sdk/)
+2. Download the SDK package for both iOS and Android
+
+---
 
 ### iOS Setup
 
-Add the following permissions to your `ios/Runner/Info.plist`:
+#### Step 1: Place the SDK Framework
+
+1. Extract `PortSIPVoIPSDK.xcframework` from the downloaded SDK package
+2. Create a `Frameworks` directory inside your app's `ios/` folder:
+   ```
+   your_app/
+   └── ios/
+       └── Frameworks/
+           └── PortSIPVoIPSDK.xcframework/
+   ```
+3. Copy `PortSIPVoIPSDK.xcframework` into `ios/Frameworks/`
+
+#### Step 2: Embed the Framework in Xcode
+
+1. Open `ios/Runner.xcworkspace` in Xcode
+2. Select the **Runner** target
+3. Go to **General** > **Frameworks, Libraries, and Embedded Content**
+4. Click **+** > **Add Other...** > **Add Files...**
+5. Navigate to `ios/Frameworks/` and select `PortSIPVoIPSDK.xcframework`
+6. Make sure it is set to **Embed & Sign**
+
+> **Important:** If you skip Step 2, the app will compile but crash at launch with a `dyld: Library not loaded` error because the framework is not embedded in the app bundle.
+
+#### Step 3: Add Required Permissions
+
+Add the following to your `ios/Runner/Info.plist`:
 
 ```xml
 <key>NSMicrophoneUsageDescription</key>
@@ -56,9 +108,51 @@ Add the following permissions to your `ios/Runner/Info.plist`:
 </array>
 ```
 
+#### Step 4: Install Pods
+
+```bash
+cd ios
+pod install
+```
+
+---
+
 ### Android Setup
 
-Add the following permissions to your `android/app/src/main/AndroidManifest.xml`:
+#### Step 1: Place the SDK JAR
+
+1. Extract `portsipvoipsdk.jar` from the downloaded SDK package
+2. Create a `libs` directory inside your app's `android/app/` folder (if it doesn't already exist):
+   ```
+   your_app/
+   └── android/
+       └── app/
+           └── libs/
+               └── portsipvoipsdk.jar
+   ```
+3. Copy `portsipvoipsdk.jar` into `android/app/libs/`
+
+#### Step 2: Add the JAR as a Dependency
+
+Add the following to your `android/app/build.gradle` (Groovy) or `android/app/build.gradle.kts` (Kotlin DSL):
+
+**Kotlin DSL (`build.gradle.kts`):**
+```kotlin
+dependencies {
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+}
+```
+
+**Groovy (`build.gradle`):**
+```groovy
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+}
+```
+
+#### Step 3: Add Required Permissions
+
+Add the following to your `android/app/src/main/AndroidManifest.xml`:
 
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
@@ -575,6 +669,15 @@ example/lib/
 
 ### Running the Example
 
+Before running the example app, you must set up the PortSIP SDK:
+
+1. Download the SDK from [PortSIP](https://www.portsip.com/download-portsip-voip-sdk/)
+2. **iOS**: Copy `PortSIPVoIPSDK.xcframework` to `example/ios/Frameworks/`
+3. **iOS**: Open `example/ios/Runner.xcworkspace` in Xcode, add the framework to Runner target as **Embed & Sign**
+4. **Android**: Copy `portsipvoipsdk.jar` to `example/android/app/libs/`
+
+Then:
+
 ```bash
 cd example
 flutter pub get
@@ -641,13 +744,29 @@ The SDK throws `PortsipStateException` for invalid operations:
 - Calling methods after `dispose()` has been called
 - Calling `initialize()` twice without disposing first
 
+## Troubleshooting
+
+### iOS
+
+**`dyld: Library not loaded: @rpath/PortSIPVoIPSDK.framework/PortSIPVoIPSDK`**
+- The framework is not embedded in the app bundle.
+- Open Xcode, select Runner target > General > Frameworks, Libraries, and Embedded Content > set `PortSIPVoIPSDK.xcframework` to **Embed & Sign**.
+
+**`No such module 'PortSIPVoIPSDK'`**
+- The framework is not in the expected location.
+- Verify `PortSIPVoIPSDK.xcframework` exists at `ios/Frameworks/PortSIPVoIPSDK.xcframework/`.
+
+### Android
+
+**`ClassNotFoundException: com.portsip.PortSipSdk`**
+- The SDK JAR is not included in app dependencies.
+- Add `implementation fileTree(dir: 'libs', include: ['*.jar'])` to `android/app/build.gradle`.
+
+**`Unresolved reference` errors during build**
+- The JAR is not in the expected location.
+- Verify `portsipvoipsdk.jar` exists at `android/app/libs/portsipvoipsdk.jar`.
+
 ## Limitations
 
 - **Outgoing calls only**: The current version supports outgoing calls. Incoming call support is planned for a future release.
 - **Voice only**: Video call functionality is not supported.
-
-## License
-
-This plugin requires a PortSIP license for production use. You can test without a license during development.
-
-For licensing information, visit [PortSIP](https://www.portsip.com/).

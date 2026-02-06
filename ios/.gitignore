@@ -37,5 +37,5 @@ Icon?
 /Flutter/ephemeral/
 /Flutter/flutter_export_environment.sh
 
-# Extracted SDK (the .zip is kept in version control, but extracted framework is gitignored)
-SDK/PortSIPVoIPSDK.xcframework/
+# PortSIP SDK (developer must provide, not checked in)
+SDK/
