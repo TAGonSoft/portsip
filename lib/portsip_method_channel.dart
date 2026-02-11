@@ -4,7 +4,6 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:portsip/models/audio_codec.dart';
-import 'package:portsip/models/portsip_events.dart';
 import 'package:portsip/models/portsip_type.dart';
 import 'package:portsip/models/sip_account.dart';
 
@@ -215,15 +214,14 @@ class MethodChannelPortsip extends PortsipPlatform {
     required bool sendSdp,
     required bool videoCall,
   }) async {
-    final args = {
-      'callee': callee,
-      'sendSdp': sendSdp,
-      'videoCall': videoCall,
-    };
+    final args = {'callee': callee, 'sendSdp': sendSdp, 'videoCall': videoCall};
     _logCall('makeCall', args);
     try {
       // Use dynamic to handle both Long (Android) and Int (iOS)
-      final result = await methodChannel.invokeMethod<dynamic>('makeCall', args);
+      final result = await methodChannel.invokeMethod<dynamic>(
+        'makeCall',
+        args,
+      );
       final sessionId = (result as num?)?.toInt() ?? -1;
       _logResponse('makeCall', sessionId);
       return sessionId;
@@ -434,7 +432,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     };
     _logCall('configureConnectionService', args);
     try {
-      final result = await methodChannel.invokeMethod<int>('configureConnectionService', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'configureConnectionService',
+        args,
+      );
       _logResponse('configureConnectionService', result);
       return result ?? -1;
     } on PlatformException catch (e) {
@@ -454,7 +455,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     final args = {'enabled': enabled};
     _logCall('enableConnectionService', args);
     try {
-      final result = await methodChannel.invokeMethod<int>('enableConnectionService', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'enableConnectionService',
+        args,
+      );
       _logResponse('enableConnectionService', result);
       return result ?? -1;
     } on PlatformException catch (e) {
@@ -473,7 +477,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     final args = {'licenseKey': licenseKey};
     _logCall('setLicenseKey', args);
     try {
-      final result = await methodChannel.invokeMethod<int>('setLicenseKey', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'setLicenseKey',
+        args,
+      );
       _logResponse('setLicenseKey', result);
       return result ?? -1;
     } on PlatformException catch (e) {
@@ -494,7 +501,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     };
     _logCall('setAudioCodecs', args);
     try {
-      final result = await methodChannel.invokeMethod<int>('setAudioCodecs', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'setAudioCodecs',
+        args,
+      );
       _logResponse('setAudioCodecs', result);
       return result ?? -1;
     } on PlatformException catch (e) {
@@ -514,7 +524,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     final args = {'enable': enable};
     _logCall('enableAudioManager', args);
     try {
-      final result = await methodChannel.invokeMethod<int>('enableAudioManager', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'enableAudioManager',
+        args,
+      );
       _logResponse('enableAudioManager', result);
       return result ?? -1;
     } on PlatformException catch (e) {
@@ -533,7 +546,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     final args = {'policy': policy};
     _logCall('setSrtpPolicy', args);
     try {
-      final result = await methodChannel.invokeMethod<int>('setSrtpPolicy', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'setSrtpPolicy',
+        args,
+      );
       _logResponse('setSrtpPolicy', result);
       return result ?? -1;
     } on PlatformException catch (e) {
@@ -552,7 +568,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     final args = {'enable': enable};
     _logCall('enable3GppTags', args);
     try {
-      final result = await methodChannel.invokeMethod<int>('enable3GppTags', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'enable3GppTags',
+        args,
+      );
       _logResponse('enable3GppTags', result);
       return result ?? -1;
     } on PlatformException catch (e) {
@@ -690,7 +709,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     };
     _logCall('registerServer', args);
     try {
-      final result = await methodChannel.invokeMethod<int>('registerServer', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'registerServer',
+        args,
+      );
       _logResponse('registerServer', result);
       return result ?? -1;
     } on PlatformException catch (e) {

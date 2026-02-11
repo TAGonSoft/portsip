@@ -3,8 +3,7 @@ import 'package:bloc/bloc.dart';
 import 'package:portsip/models/sip_account.dart';
 import 'package:portsip/portsip.dart';
 import 'package:portsip_example/portsip/pages/connection/connection_state.dart';
-import 'package:portsip_example/portsip/repository/portsip_repository.dart'
-    hide PortsipEvent;
+import 'package:portsip_example/portsip/repository/portsip_repository.dart';
 
 class ConnectionCubit extends Cubit<ConnectionState> {
   final PortsipRepository _repository = PortsipRepository.instance;
