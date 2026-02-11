@@ -224,13 +224,13 @@ await portsip.setAudioCodecs(audioCodecs: [
 // 6. Configure SIP account
 await portsip.register(
   account: SipAccount(
-    username: "1001",
+    userName: "1001",
+    password: "secret",
+    sipServer: "sip.example.com",
+    sipServerPort: 5060,
     displayName: "John Doe",
     authName: "1001",
-    password: "secret",
-    domain: "sip.example.com",
-    serverAddress: "sip.example.com",
-    serverPort: 5060,
+    userDomain: "sip.example.com",
   ),
 );
 
@@ -310,13 +310,13 @@ class CallManager {
     // Configure account
     await _portsip.register(
       account: SipAccount(
-        username: "1001",
+        userName: "1001",
+        password: "password123",
+        sipServer: "sip.example.com",
+        sipServerPort: 5060,
         displayName: "User 1001",
         authName: "1001",
-        password: "password123",
-        domain: "sip.example.com",
-        serverAddress: "sip.example.com",
-        serverPort: 5060,
+        userDomain: "sip.example.com",
       ),
     );
 

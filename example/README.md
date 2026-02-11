@@ -64,13 +64,13 @@ Update the SIP account details in the connection page with your credentials:
 
 ```dart
 SipAccount(
-  username: "your-extension",
+  userName: "your-extension",
+  password: "your-password",
+  sipServer: "your-sip-server.com",
+  sipServerPort: 5060,
   displayName: "Your Name",
   authName: "your-extension",
-  password: "your-password",
-  domain: "your-sip-server.com",
-  serverAddress: "your-sip-server.com",
-  serverPort: 5060,
+  userDomain: "your-sip-server.com",
 )
 ```
 
