@@ -119,34 +119,46 @@ pod install
 
 ### Android Setup
 
-#### Step 1: Place the SDK JAR
+#### Step 1: Place the SDK AAR
 
-1. Extract `portsipvoipsdk.jar` from the downloaded SDK package
+1. Extract `portsipvoipsdk.aar` from the downloaded SDK package
 2. Create a `libs` directory inside your app's `android/app/` folder (if it doesn't already exist):
    ```
    your_app/
    └── android/
        └── app/
            └── libs/
-               └── portsipvoipsdk.jar
+               └── portsipvoipsdk.aar
    ```
-3. Copy `portsipvoipsdk.jar` into `android/app/libs/`
+3. Copy `portsipvoipsdk.aar` into `android/app/libs/`
 
-#### Step 2: Add the JAR as a Dependency
+#### Step 2: Add the AAR as a Dependency
 
 Add the following to your `android/app/build.gradle` (Groovy) or `android/app/build.gradle.kts` (Kotlin DSL):
 
 **Kotlin DSL (`build.gradle.kts`):**
 ```kotlin
+repositories {
+    flatDir {
+        dirs("libs")
+    }
+}
+
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    implementation(":portsipvoipsdk@aar")
 }
 ```
 
 **Groovy (`build.gradle`):**
 ```groovy
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation(name: 'portsipvoipsdk', ext: 'aar')
 }
 ```
 
@@ -674,7 +686,7 @@ Before running the example app, you must set up the PortSIP SDK:
 1. Download the SDK from [PortSIP](https://www.portsip.com/download-portsip-voip-sdk/)
 2. **iOS**: Copy `PortSIPVoIPSDK.xcframework` to `example/ios/Frameworks/`
 3. **iOS**: Open `example/ios/Runner.xcworkspace` in Xcode, add the framework to Runner target as **Embed & Sign**
-4. **Android**: Copy `portsipvoipsdk.jar` to `example/android/app/libs/`
+4. **Android**: Copy `portsipvoipsdk.aar` to `example/android/app/libs/`
 
 Then:
 
@@ -759,12 +771,12 @@ The SDK throws `PortsipStateException` for invalid operations:
 ### Android
 
 **`ClassNotFoundException: com.portsip.PortSipSdk`**
-- The SDK JAR is not included in app dependencies.
-- Add `implementation fileTree(dir: 'libs', include: ['*.jar'])` to `android/app/build.gradle`.
+- The SDK AAR is not included in app dependencies.
+- Add a `flatDir` repository and `implementation(name: 'portsipvoipsdk', ext: 'aar')` to `android/app/build.gradle`.
 
 **`Unresolved reference` errors during build**
-- The JAR is not in the expected location.
-- Verify `portsipvoipsdk.jar` exists at `android/app/libs/portsipvoipsdk.jar`.
+- The AAR is not in the expected location.
+- Verify `portsipvoipsdk.aar` exists at `android/app/libs/portsipvoipsdk.aar`.
 
 ## Limitations
 

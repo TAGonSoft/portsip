@@ -262,7 +262,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun setSrtpPolicy(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val policy = (arguments["policy"] as? Int) ?: 0
-        portSipSdk?.setSrtpPolicy(policy)
+        portSipSdk?.setSrtpPolicy(policy, false)
         PortsipLogger.d(COMPONENT, "SRTP policy set to $policy")
         return 0
     }
