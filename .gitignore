@@ -123,3 +123,4 @@ coverage/
 /example/android/app/libs/portsipvoipsdk.jar
 ios/SDK/
 android/SDK/
+/example/android/app/libs
