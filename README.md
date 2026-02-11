@@ -517,11 +517,12 @@ await portsip.enableCallKit(enabled: true);
 
 | Event | Data | Description |
 |-------|------|-------------|
-| `onCallKitHold` | `sessionId`, `isHold` | User toggled hold from CallKit UI |
-| `onCallKitMute` | `sessionId`, `isMuted` | User toggled mute from CallKit UI |
-| `onCallKitSpeaker` | `sessionId`, `isSpeaker` | User toggled speaker from CallKit UI |
-| `onCallKitDTMF` | `sessionId`, `digit` | User sent DTMF from CallKit UI |
-| `onCallKitFailure` | `sessionId`, `reason` | CallKit failed (call auto-terminated) |
+| `onCallKitHold` | `sessionId`, `onHold` | User toggled hold from CallKit UI |
+| `onCallKitMute` | `sessionId`, `muted` | User toggled mute from CallKit UI |
+| `onCallKitSpeaker` | `sessionId`, `enableSpeaker` | User toggled speaker from CallKit UI |
+| `onCallKitDTMF` | `sessionId`, `digits` | User sent DTMF from CallKit UI |
+| `onCallKitEndCall` | `sessionId` | User ended call from CallKit UI |
+| `onCallKitFailure` | `sessionId`, `error` | CallKit failed (call auto-terminated) |
 
 ## Android ConnectionService Integration
 
@@ -543,11 +544,11 @@ await portsip.enableConnectionService(enabled: true);
 | Event | Data | Description |
 |-------|------|-------------|
 | `onConnectionServiceEndCall` | `sessionId` | User ended call from system UI |
-| `onConnectionServiceHold` | `sessionId`, `isHold` | User toggled hold from system UI |
-| `onConnectionServiceMute` | `sessionId`, `isMuted` | User toggled mute from system UI |
-| `onConnectionServiceSpeaker` | `sessionId`, `isSpeaker` | User toggled speaker from system UI |
-| `onConnectionServiceDTMF` | `sessionId`, `digit` | User sent DTMF from system UI |
-| `onConnectionServiceFailure` | `reason` | ConnectionService operation failed |
+| `onConnectionServiceHold` | `sessionId`, `onHold` | User toggled hold from system UI |
+| `onConnectionServiceMute` | `sessionId`, `muted` | User toggled mute from system UI |
+| `onConnectionServiceSpeaker` | `sessionId`, `enableSpeaker` | User toggled speaker from system UI |
+| `onConnectionServiceDTMF` | `sessionId`, `digits` | User sent DTMF from system UI |
+| `onConnectionServiceFailure` | `sessionId`, `message` | ConnectionService operation failed |
 
 ## Audio Processing
 
@@ -763,6 +764,10 @@ The SDK throws `PortsipStateException` for invalid operations:
 **`dyld: Library not loaded: @rpath/PortSIPVoIPSDK.framework/PortSIPVoIPSDK`**
 - The framework is not embedded in the app bundle.
 - Open Xcode, select Runner target > General > Frameworks, Libraries, and Embedded Content > set `PortSIPVoIPSDK.xcframework` to **Embed & Sign**.
+
+**`missing or invalid CFBundleExecutable in its Info.plist`**
+- The SDK framework's `Info.plist` may be missing the `CFBundleExecutable` key.
+- Fix by running: `plutil -insert CFBundleExecutable -string "PortSIPVoIPSDK" <path-to-framework>/Info.plist` for both the device and simulator slices inside the `.xcframework`.
 
 **`No such module 'PortSIPVoIPSDK'`**
 - The framework is not in the expected location.
