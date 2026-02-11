@@ -69,6 +69,7 @@ class MethodChannelPortsip extends PortsipPlatform {
 
   /// Helper to log errors from platform exceptions
   void _logError(String method, PlatformException e) {
+    if (!_logsEnabled) return;
     debugPrint('$_tag ❌ $method | PlatformException: ${e.code} - ${e.message}');
   }
 
