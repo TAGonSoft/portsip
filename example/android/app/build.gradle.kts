@@ -39,6 +39,18 @@ android {
     }
 }
 
+repositories {
+    flatDir {
+        dirs("libs")
+    }
+}
+
+dependencies {
+    // PortSIP VoIP SDK - must be placed at android/app/libs/portsipvoipsdk.aar
+    // Download from: https://www.portsip.com/download-portsip-voip-sdk/
+    implementation(":portsipvoipsdk@aar")
+}
+
 flutter {
     source = "../.."
 }

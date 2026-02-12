@@ -51,6 +51,13 @@ lib/
 
 ## Getting Started
 
+Before running, you must set up the PortSIP SDK (see the [plugin README](../README.md#sdk-setup-required) for details):
+
+1. **iOS**: Copy `PortSIPVoIPSDK.xcframework` to `ios/Frameworks/` and embed it in Xcode as **Embed & Sign**
+2. **Android**: Copy `portsipvoipsdk.aar` to `android/app/libs/`
+
+Then:
+
 ```bash
 cd example
 flutter pub get
@@ -64,13 +71,13 @@ Update the SIP account details in the connection page with your credentials:
 
 ```dart
 SipAccount(
-  username: "your-extension",
+  userName: "your-extension",
+  password: "your-password",
+  sipServer: "your-sip-server.com",
+  sipServerPort: 5060,
   displayName: "Your Name",
   authName: "your-extension",
-  password: "your-password",
-  domain: "your-sip-server.com",
-  serverAddress: "your-sip-server.com",
-  serverPort: 5060,
+  userDomain: "your-sip-server.com",
 )
 ```
 
@@ -249,7 +256,7 @@ CallKit provides the native iOS call UI, allowing calls to appear like regular p
 - Audio routing controls
 - Mute, hold, and speaker buttons
 
-Events handled: `CallKitMuteEvent`, `CallKitHoldEvent`, `CallKitSpeakerEvent`, `CallKitDTMFEvent`
+Events handled: `CallKitMuteEvent`, `CallKitHoldEvent`, `CallKitSpeakerEvent`, `CallKitDTMFEvent`, `CallKitEndCallEvent`, `CallKitFailureEvent`
 
 ### Android (ConnectionService)
 

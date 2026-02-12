@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:portsip/models/sip_account.dart';
 import 'package:portsip_example/portsip/pages/connection/connection_cubit.dart';
 import 'package:portsip_example/portsip/pages/connection/connection_state.dart'
-    as PortSIPConnectionState;
+    as connection_state;
 
 class ConnectionPage extends StatefulWidget {
   const ConnectionPage({super.key});
@@ -53,7 +53,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
         child:
             BlocBuilder<
               ConnectionCubit,
-              PortSIPConnectionState.ConnectionState
+              connection_state.ConnectionState
             >(
               builder: (context, state) {
                 return Form(
@@ -193,41 +193,41 @@ class _ConnectionPageState extends State<ConnectionPage> {
     );
   }
 
-  Color _getStatusColor(PortSIPConnectionState.ConnectionStatus status) {
+  Color _getStatusColor(connection_state.ConnectionStatus status) {
     switch (status) {
-      case PortSIPConnectionState.ConnectionStatus.disconnected:
+      case connection_state.ConnectionStatus.disconnected:
         return Colors.grey;
-      case PortSIPConnectionState.ConnectionStatus.connecting:
+      case connection_state.ConnectionStatus.connecting:
         return Colors.orange;
-      case PortSIPConnectionState.ConnectionStatus.connected:
+      case connection_state.ConnectionStatus.connected:
         return Colors.green;
-      case PortSIPConnectionState.ConnectionStatus.error:
+      case connection_state.ConnectionStatus.error:
         return Colors.red;
     }
   }
 
-  IconData _getStatusIcon(PortSIPConnectionState.ConnectionStatus status) {
+  IconData _getStatusIcon(connection_state.ConnectionStatus status) {
     switch (status) {
-      case PortSIPConnectionState.ConnectionStatus.disconnected:
+      case connection_state.ConnectionStatus.disconnected:
         return Icons.power_off;
-      case PortSIPConnectionState.ConnectionStatus.connecting:
+      case connection_state.ConnectionStatus.connecting:
         return Icons.sync;
-      case PortSIPConnectionState.ConnectionStatus.connected:
+      case connection_state.ConnectionStatus.connected:
         return Icons.check_circle;
-      case PortSIPConnectionState.ConnectionStatus.error:
+      case connection_state.ConnectionStatus.error:
         return Icons.error;
     }
   }
 
-  String _getStatusText(PortSIPConnectionState.ConnectionStatus status) {
+  String _getStatusText(connection_state.ConnectionStatus status) {
     switch (status) {
-      case PortSIPConnectionState.ConnectionStatus.disconnected:
+      case connection_state.ConnectionStatus.disconnected:
         return 'Disconnected';
-      case PortSIPConnectionState.ConnectionStatus.connecting:
+      case connection_state.ConnectionStatus.connecting:
         return 'Connecting...';
-      case PortSIPConnectionState.ConnectionStatus.connected:
+      case connection_state.ConnectionStatus.connected:
         return 'Connected';
-      case PortSIPConnectionState.ConnectionStatus.error:
+      case connection_state.ConnectionStatus.error:
         return 'Connection Error';
     }
   }

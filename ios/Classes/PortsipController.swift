@@ -377,7 +377,7 @@ class PortsipController: NSObject {
     func setSrtpPolicy(arguments: [String: Any]) -> Int {
         return sdkQueue.sync {
             let policy = UInt32(arguments["policy"] as? Int ?? 0)
-            portSIPSDK.setSrtpPolicy(SRTP_POLICY(rawValue: policy))
+            portSIPSDK.setSrtpPolicy(SRTP_POLICY(rawValue: policy), enableGcmCryptoSuites: false)
             return 0
         }
     }

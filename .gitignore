@@ -116,3 +116,11 @@ coverage/
 **/android/app/debug/
 **/android/app/profile/
 **/android/app/release/
+
+# PortSIP SDK binaries (developer-provided, not checked in)
+/ios/Frameworks/PortSIPVoIPSDK.xcframework/
+/example/ios/Frameworks/PortSIPVoIPSDK.xcframework/
+/example/android/app/libs/portsipvoipsdk.jar
+ios/SDK/
+android/SDK/
+/example/android/app/libs

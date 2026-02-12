@@ -1,3 +1,11 @@
+## 0.0.2
+
+* **BREAKING CHANGE**: PortSIP VoIP SDK binaries are no longer bundled with the plugin
+  - iOS: Developers must place `PortSIPVoIPSDK.xcframework` at `ios/Frameworks/` and embed it in Xcode (Embed & Sign)
+  - Android: Developers must place `portsipvoipsdk.jar` at `android/app/libs/` and add it as an `implementation` dependency
+  - Plugin package size reduced from ~80MB to under 1MB
+  - See README for detailed setup instructions
+
 ## 0.0.1
 
 * Initial release of the PortSIP Flutter plugin

@@ -83,6 +83,7 @@ class SipAccount {
     r'[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}'
     r')$',
   );
+
   /// The SIP username (extension number or account name)
   final String userName;
 
@@ -159,11 +160,11 @@ class SipAccount {
     required this.userName,
     required this.password,
     required this.sipServer,
-    required int sipServerPort,
+    required this.sipServerPort,
     this.stunServer = '',
-    int stunServerPort = 3478,
-    String outboundServer = '',
-    int outboundServerPort = 0,
+    this.stunServerPort = 3478,
+    this.outboundServer = '',
+    this.outboundServerPort = 0,
     this.displayName = '',
     this.authName = '',
     this.userDomain = '',
@@ -175,13 +176,9 @@ class SipAccount {
     this.videoWidth = 352,
     this.videoHeight = 288,
     List<AudioCodec>? audioCodecs,
-  })  : sipServerPort = sipServerPort,
-        stunServerPort = stunServerPort,
-        outboundServer = outboundServer,
-        outboundServerPort = outboundServerPort,
-        audioCodecs = (audioCodecs == null || audioCodecs.isEmpty)
-            ? defaultAudioCodecs
-            : audioCodecs {
+  }) : audioCodecs = (audioCodecs == null || audioCodecs.isEmpty)
+           ? defaultAudioCodecs
+           : audioCodecs {
     _validate();
   }
 
