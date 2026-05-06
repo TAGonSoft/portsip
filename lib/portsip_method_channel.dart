@@ -188,7 +188,8 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
-  /// Unregisters from SIP server and releases resources.
+  /// Unregisters the SIP account from the server. The SDK remains
+  /// initialized and the account can be re-registered later.
   ///
   /// Invokes the native 'unRegister' method via MethodChannel.
   @override

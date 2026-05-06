@@ -111,9 +111,11 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('register has not been implemented.');
   }
 
-  /// Unregisters from the SIP server and releases SDK resources.
+  /// Unregisters the SIP account from the SIP server.
   ///
-  /// This should be called when logging out or shutting down SIP functionality.
+  /// The SDK remains initialized after this call, so the account can be
+  /// re-registered later without going through [initialize] again. For a
+  /// full teardown that also releases the underlying SDK, call [dispose].
   Future<void> unRegister() async {
     throw UnimplementedError('unRegister has not been implemented.');
   }

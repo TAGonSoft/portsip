@@ -315,12 +315,16 @@ class PortsipController: NSObject {
         }
     }
 
-    /// Unregisters from the SIP server and uninitializes the SDK.
-    /// This should be called when logging out or shutting down the SIP functionality.
+    /// Unregisters the SIP account from the SIP server.
+    ///
+    /// The SDK remains initialized after this call, so the account can be
+    /// re-registered later (via register()/registerServer()) without going
+    /// through initialize() again. Use dispose() for a full teardown that
+    /// also releases the SDK, removes lifecycle observers, and disposes the
+    /// CallKit provider.
     func unRegister() {
         sdkQueue.sync {
             portSIPSDK.unRegisterServer(0)
-            portSIPSDK.unInitialize()
         }
     }
 
