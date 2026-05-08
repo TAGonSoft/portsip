@@ -1,3 +1,7 @@
+## 0.0.3
+
+* **Fix**: `unregister` no longer uninitializes the SDK, so calling `register` again afterwards works correctly without requiring a full re-initialization.
+
 ## 0.0.2
 
 * **BREAKING CHANGE**: PortSIP VoIP SDK binaries are no longer bundled with the plugin
