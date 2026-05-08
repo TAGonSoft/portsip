@@ -14,7 +14,7 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Registers with the SIP server (should be called after register) */
     REGISTER_SERVER("registerServer"),
     
-    /** Unregisters the SIP account from the SIP server */
+    /** Unregisters the SIP account from the SIP server (SDK stays initialized) */
     UNREGISTER("unRegister"),
     
     /** Initiates an outgoing call to a specified number or SIP URI */

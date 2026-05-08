@@ -10,7 +10,7 @@ enum PortsipMethodCall: String {
     /// Registers with the SIP server (should be called after register)
     case registerServer = "registerServer"
     
-    /// Unregisters the SIP account from the SIP server
+    /// Unregisters the SIP account from the SIP server (SDK stays initialized)
     case unRegister = "unRegister"
     
     /// Initiates an outgoing call to a specified number or SIP URI
