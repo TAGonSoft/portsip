@@ -200,7 +200,7 @@ class PortsipCallKitProvider: NSObject {
         let uuid = UUID()
         setUUID(uuid, for: sessionId)
 
-        let handle = CXHandle(type: .generic, value: callee)
+        let handle = CXHandle(type: .phoneNumber, value: callee)
         let startCallAction = CXStartCallAction(call: uuid, handle: handle)
         startCallAction.isVideo = hasVideo
 
