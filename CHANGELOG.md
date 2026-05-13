@@ -1,3 +1,7 @@
+## 0.0.4
+
+* **Fix**: Change the CXHandle type from .generic to .phoneNumber when reporting outgoing calls to CallKit via CXStartCallAction.
+
 ## 0.0.3
 
 * **Fix**: `unregister` no longer uninitializes the SDK, so calling `register` again afterwards works correctly without requiring a full re-initialization.
