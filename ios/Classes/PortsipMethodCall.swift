@@ -66,6 +66,9 @@ enum PortsipMethodCall: String {
     /// Enables or disables Voice Activity Detection (VAD)
     case enableVAD = "enableVAD"
 
+    /// Tears down the native SDK while keeping the plugin alive (runtime user swap)
+    case unInitialize = "unInitialize"
+
     /// Disposes of all SDK resources and cleans up
     case dispose = "dispose"
 

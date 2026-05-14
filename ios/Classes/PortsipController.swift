@@ -700,6 +700,23 @@ class PortsipController: NSObject {
 
     // MARK: - Cleanup Methods
 
+    /// Tears down the native PortSIP SDK so a different SIP user can be
+    /// loaded via initialize() + register() again, without shutting the
+    /// plugin down. Used for runtime user swap (e.g. switching phone number).
+    ///
+    /// Unlike dispose(), this does NOT remove lifecycle observers or tear
+    /// down CallKit — those are app-lifetime concerns.
+    func unInitialize() {
+        sdkQueue.sync {
+            if let sdk = _portSIPSDK {
+                sdk.unRegisterServer(0)
+                sdk.unInitialize()
+                sdk.delegate = nil
+            }
+            _portSIPSDK = nil
+        }
+    }
+
     /// Disposes of all SDK resources and removes observers.
     /// This should be called when the plugin is being detached or when the app
     /// needs to completely release all PortSIP resources.

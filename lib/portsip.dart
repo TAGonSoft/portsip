@@ -716,4 +716,25 @@ class Portsip {
 
     _state = PortsipState.disposed;
   }
+
+  /// Tears down the native SDK so a different SIP user can be loaded via
+  /// [initialize] + [register] again, without shutting down the plugin.
+  ///
+  /// Use this for runtime user swap (e.g. the user picks a different phone
+  /// number). Unlike [dispose] this keeps the event stream and method
+  /// channel handler alive — after the next [initialize] events keep flowing
+  /// to the same listeners.
+  ///
+  /// This is a no-op if the SDK is not currently initialized.
+  ///
+  /// Throws [PortsipStateException] if the SDK has been disposed.
+  Future<void> unInitialize() async {
+    _checkNotDisposed();
+
+    if (_state == PortsipState.initialized) {
+      await PortsipPlatform.instance.unInitialize();
+    }
+
+    _state = PortsipState.uninitialized;
+  }
 }

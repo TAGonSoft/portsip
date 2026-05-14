@@ -441,10 +441,25 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('registerServer has not been implemented.');
   }
 
+  /// Tears down the native SDK so a different user can be loaded via
+  /// [initialize] + [register] again, without shutting down the plugin.
+  ///
+  /// Use this when switching SIP users (different number/account) — PortSIP
+  /// only allows one user loaded at a time and silently rejects swap attempts
+  /// with -60095, so the native SDK has to be unInitialized between users.
+  ///
+  /// In contrast to [dispose], this method does NOT close the event stream,
+  /// remove lifecycle observers, or tear down CallKit/ConnectionService.
+  /// The plugin remains usable; the next [initialize] will build a fresh
+  /// native SDK and events keep flowing through the existing stream.
+  Future<void> unInitialize() async {
+    throw UnimplementedError('unInitialize has not been implemented.');
+  }
+
   /// Disposes of all SDK resources and cleans up.
   ///
   /// This method should be called when the plugin is no longer needed,
-  /// typically when the app is shutting down or the user logs out.
+  /// typically when the app is shutting down.
   ///
   /// This method:
   /// - Unregisters from the SIP server
@@ -453,7 +468,7 @@ abstract class PortsipPlatform extends PlatformInterface {
   /// - Clears event stream handlers
   ///
   /// After calling dispose(), the plugin instance should not be used.
-  /// Create a new instance if SIP functionality is needed again.
+  /// To swap SIP users at runtime use [unInitialize] instead.
   Future<void> dispose() async {
     throw UnimplementedError('dispose has not been implemented.');
   }

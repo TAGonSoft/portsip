@@ -230,6 +230,13 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.UN_INITIALIZE -> {
+                    PortsipLogger.logCall(COMPONENT, "unInitialize")
+                    PortsipController.shared.unInitialize()
+                    PortsipLogger.logResponse(COMPONENT, "unInitialize", "done")
+                    result.success(null)
+                }
+
                 PortsipMethodCall.DISPOSE -> {
                     PortsipLogger.logCall(COMPONENT, "dispose")
                     PortsipController.shared.dispose()
