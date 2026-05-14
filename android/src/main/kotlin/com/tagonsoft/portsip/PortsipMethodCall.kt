@@ -71,6 +71,9 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Enables or disables Automatic Noise Suppression (ANS) */
     ENABLE_ANS("enableANS"),
 
+    /** Tears down the native SDK while keeping the plugin alive (runtime user swap) */
+    UN_INITIALIZE("unInitialize"),
+
     /** Disposes of all SDK resources and cleans up */
     DISPOSE("dispose"),
 

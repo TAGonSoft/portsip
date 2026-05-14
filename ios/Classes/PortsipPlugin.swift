@@ -177,6 +177,11 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.enableVAD(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "enableVAD", resultValue)
             result(resultValue)
+        case .unInitialize:
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "unInitialize")
+            PortsipController.shared.unInitialize()
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "unInitialize", "done")
+            result(nil)
         case .dispose:
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "dispose")
             PortsipController.shared.dispose()

@@ -723,6 +723,20 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Tears down the native SDK while keeping the plugin (and its event
+  /// stream) alive. Used to swap SIP users at runtime.
+  @override
+  Future<void> unInitialize() async {
+    if (_isDisposed) return;
+    _logCall('unInitialize');
+    try {
+      await methodChannel.invokeMethod<void>('unInitialize');
+      _logResponse('unInitialize', 'done');
+    } on PlatformException catch (e) {
+      _logError('unInitialize', e);
+    }
+  }
+
   /// Disposes of all SDK resources and cleans up.
   ///
   /// Invokes the native 'dispose' method via MethodChannel.

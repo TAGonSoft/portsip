@@ -795,4 +795,21 @@ class PortsipController private constructor() : OnPortSIPEvent {
 
         PortsipLogger.d(COMPONENT, "PortsipController disposed")
     }
+
+    /**
+     * Tears down the native PortSIP SDK so a different SIP user can be
+     * loaded via initialize() + register() again, without shutting the
+     * plugin down. Used for runtime user swap (e.g. switching phone number).
+     *
+     * Unlike dispose(), this does NOT tear down ConnectionService or release
+     * the context/activity references — those are app-lifetime concerns.
+     */
+    fun unInitialize() = synchronized(sdkLock) {
+        portSipSdk?.unRegisterServer(0)
+        portSipSdk?.unInitialize()
+        portSipSdk?.setOnPortSIPEvent(null)
+        portSipSdk = null
+
+        PortsipLogger.d(COMPONENT, "PortsipController unInitialized")
+    }
 }
