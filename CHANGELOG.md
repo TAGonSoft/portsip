@@ -1,3 +1,7 @@
+## 0.0.5
+
+* **Fix**: Add `unInitialize()` for runtime SIP user swap. Tears down the native SDK (`unRegisterServer(0)` + `unInitialize()`) so the next `initialize()` + `register()` can load a different user cleanly without hitting `-60095` (`ECoreAllowOnlyOneUser`). Unlike `dispose()`, this keeps the event stream, method-channel handler, iOS observers/CallKit, and Android ConnectionService alive — existing event listeners keep firing after the swap.
+
 ## 0.0.4
 
 * **Fix**: Change the CXHandle type from .generic to .phoneNumber when reporting outgoing calls to CallKit via CXStartCallAction.
