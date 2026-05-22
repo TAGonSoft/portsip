@@ -142,6 +142,16 @@ class PortsipCallKitProvider: NSObject {
         }
     }
 
+    /// Thread-safe accessor for currently active session IDs.
+    /// Used by the willTerminate path so we can BYE every live call before
+    /// REGISTER:0 — keeps the server from holding the dialog open after
+    /// swipe-kill.
+    func activeSessionIds() -> [Int] {
+        return sessionLock.sync {
+            return Array(sessionToUUID.keys)
+        }
+    }
+
     /// Thread-safe getter for all sessions (for iteration)
     private func getAllSessions() -> [Int: UUID] {
         return sessionLock.sync {
