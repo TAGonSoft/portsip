@@ -138,7 +138,7 @@ class PortsipController: NSObject {
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
-        
+
         // Observe when app returns to foreground
         NotificationCenter.default.addObserver(
             self,
@@ -146,6 +146,36 @@ class PortsipController: NSObject {
             name: UIApplication.willEnterForegroundNotification,
             object: nil
         )
+
+        // Observe app termination so we can hang up + REGISTER:0 natively.
+        // Required because during a swipe-kill with an active CallKit call,
+        // iOS SIGKILLs the Flutter isolate before any Dart-side cleanup
+        // makes it across the platform channel — but the AppDelegate
+        // notification path still gets its grace window.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillTerminate),
+            name: UIApplication.willTerminateNotification,
+            object: nil
+        )
+    }
+
+    /// Called by iOS just before the process is terminated (swipe-kill or
+    /// system-initiated). Synchronously hangs up every active CallKit call
+    /// and unregisters from the SIP server
+    @objc private func appWillTerminate() {
+        PortsipLogger.d("Controller", "appWillTerminate — flushing active calls + UNREGISTER")
+        let sessions = PortsipCallKitProvider.shared.activeSessionIds()
+
+        for sessionId in sessions {
+            PortsipCallKitProvider.shared.reportCallEnded(sessionId: sessionId, reason: .remoteEnded)
+        }
+
+        for sessionId in sessions {
+            portSIPSDK.hangUp(Int(sessionId))
+        }
+
+        portSIPSDK.unRegisterServer(1000)
     }
     
     /// Called when the app enters background.
