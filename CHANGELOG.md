@@ -1,3 +1,12 @@
+## 0.0.6
+
+* **iOS**: When the app is swipe-killed (or system-terminated) while a CallKit
+call is active, the SIP dialog is now properly closed natively before the
+process dies. The controller observes `UIApplication.willTerminateNotification`
+and ends each active call and unregisters the device from the
+SIP server, so the server no longer holds the call open or keeps the device
+registered after termination.
+
 ## 0.0.5
 
 * **Fix**: Add `unInitialize()` for runtime SIP user swap. Tears down the native SDK (`unRegisterServer(0)` + `unInitialize()`) so the next `initialize()` + `register()` can load a different user cleanly without hitting `-60095` (`ECoreAllowOnlyOneUser`). Unlike `dispose()`, this keeps the event stream, method-channel handler, iOS observers/CallKit, and Android ConnectionService alive — existing event listeners keep firing after the swap.
