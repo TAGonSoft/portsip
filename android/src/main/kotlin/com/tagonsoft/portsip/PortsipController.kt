@@ -384,7 +384,13 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun hangUp(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
-        return portSipSdk?.hangUp(sessionId) ?: -1
+        val result = portSipSdk?.hangUp(sessionId) ?: -1
+        if (sessionId >= 0L) {
+            PortsipConnectionService.reportCallEnded(
+                sessionId, android.telecom.DisconnectCause.LOCAL
+            )
+        }
+        return result
     }
 
     /**

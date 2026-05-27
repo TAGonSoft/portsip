@@ -91,10 +91,8 @@ class PortsipConnectionService : ConnectionService() {
                         isEnabled = false
                         return
                     }
-
                     val phoneAccount = PhoneAccount.builder(phoneAccountHandle, appName)
                         .setCapabilities(
-                            PhoneAccount.CAPABILITY_CALL_PROVIDER or
                             PhoneAccount.CAPABILITY_SELF_MANAGED
                         )
                         .addSupportedUriScheme(PhoneAccount.SCHEME_SIP)
@@ -205,13 +203,14 @@ class PortsipConnectionService : ConnectionService() {
 
                 // Create URI for the callee
                 val uri = Uri.fromParts(PhoneAccount.SCHEME_SIP, callee, null)
-
-                // Build extras bundle
-                val extras = Bundle().apply {
-                    putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+                val callExtras = Bundle().apply {
                     putLong(PortsipConstants.BundleExtras.SESSION_ID, sessionId)
                     putString(PortsipConstants.BundleExtras.CALLEE, callee)
                     putBoolean(PortsipConstants.BundleExtras.HAS_VIDEO, hasVideo)
+                }
+                val extras = Bundle().apply {
+                    putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+                    putBundle(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS, callExtras)
                 }
 
                 // Request to place the call
