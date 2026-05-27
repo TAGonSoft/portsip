@@ -1,3 +1,9 @@
+## 0.0.7
+
+* **Fix (Android)**: Correctly report and track self-managed outgoing calls with
+the system ConnectionService across their full lifecycle (placement, connect,
+hang-up), and reliably tear the call down on hang-up.
+
 ## 0.0.6
 
 * **iOS**: When the app is swipe-killed (or system-terminated) while a CallKit
