@@ -1,3 +1,20 @@
+## 0.0.8
+
+* **Feature**: Expose `refreshRegistration({int expires = 0})` on both
+platforms. Call it when the device's network changes (e.g. WiFi to cellular
+handoff) — the native SDK re-registers over the new network interface. Pass
+`expires: 0` (default) to keep the previously negotiated expiry and force an
+immediate re-register.
+* **Feature**: Expose `updateCall({sessionId, enableAudio, enableVideo})` on
+both platforms. Sends a re-INVITE that renegotiates the media streams of an
+established call — use it after a network change to re-anchor audio to the
+new interface.
+* **Feature**: Expose `enableSessionTimer({int timerSeconds = 90, int refreshMode = 0})`
+on both platforms. Enables SIP session timers (RFC 4028) so a dead call leg is
+reaped by the server at expiry when the client stops refreshing (e.g. lost
+network mid-call), instead of lingering for minutes. Minimum 90s; refreshMode
+0 = UAC (caller) refreshes, 1 = UAS (callee).
+
 ## 0.0.7
 
 * **Fix (Android)**: Correctly report and track self-managed outgoing calls with
