@@ -161,6 +161,24 @@ void main() {
       );
     });
 
+    test('throws PortsipStateException when calling refreshRegistration() before initialize()', () {
+      final portsip = Portsip();
+
+      expect(
+        () => portsip.refreshRegistration(),
+        throwsA(isA<PortsipStateException>()),
+      );
+    });
+
+    test('throws PortsipStateException when calling enableSessionTimer() before initialize()', () {
+      final portsip = Portsip();
+
+      expect(
+        () => portsip.enableSessionTimer(),
+        throwsA(isA<PortsipStateException>()),
+      );
+    });
+
     test('throws PortsipStateException when calling methods after dispose()', () async {
       final portsip = Portsip();
 

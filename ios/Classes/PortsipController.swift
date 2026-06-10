@@ -345,6 +345,54 @@ class PortsipController: NSObject {
         }
     }
 
+    /// Refreshes the registration with the SIP server.
+    /// Call this when the device's network changes (e.g. WiFi to cellular
+    /// handoff) so the SDK re-registers over the new network interface and
+    /// updates any active call session.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - expires: Registration expiry in seconds; 0 keeps the previously
+    ///     negotiated expiry and forces an immediate re-register (default: 0)
+    /// - Returns: 0 on success, error code otherwise
+    func refreshRegistration(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let expires = Int32(arguments["expires"] as? Int ?? 0)
+            return Int(portSIPSDK.refreshRegistration(expires))
+        }
+    }
+
+    /// Updates an active call session (sends a re-INVITE) to renegotiate the
+    /// media streams — e.g. after a network change to re-anchor media to the
+    /// new interface.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - sessionId: The session ID of the call to update
+    ///   - enableAudio: true to keep/enable the audio stream (default: true)
+    ///   - enableVideo: true to enable the video stream (default: false)
+    /// - Returns: 0 on success, error code otherwise
+    func updateCall(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            let enableAudio = arguments["enableAudio"] as? Bool ?? true
+            let enableVideo = arguments["enableVideo"] as? Bool ?? false
+
+            return Int(portSIPSDK.updateCall(Int(sessionId), enableAudio: enableAudio, enableVideo: enableVideo))
+        }
+    }
+
+    /// Enables SIP session timers (RFC 4028) for subsequent calls so the server
+    /// reaps a dead leg at expiry when the client stops refreshing.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - timerSeconds: Session interval in seconds (minimum 90)
+    ///   - refreshMode: 0 = UAC (caller) refreshes (default), 1 = UAS (callee)
+    /// - Returns: 0 on success, error code otherwise
+    func enableSessionTimer(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let timerSeconds = Int32(arguments["timerSeconds"] as? Int ?? 90)
+            let refreshMode: SESSION_REFRESH_MODE =
+                (arguments["refreshMode"] as? Int == 1) ? SESSION_REFERESH_UAS : SESSION_REFERESH_UAC
+            return Int(portSIPSDK.enableSessionTimer(timerSeconds, refreshMode: refreshMode))
+        }
+    }
+
     /// Unregisters the SIP account from the SIP server.
     ///
     /// The SDK remains initialized after this call, so the account can be

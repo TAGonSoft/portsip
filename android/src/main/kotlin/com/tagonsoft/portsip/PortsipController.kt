@@ -203,6 +203,48 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     /**
+     * Refreshes the registration with the SIP server.
+     * Call this when the device's network changes (e.g. WiFi to cellular
+     * handoff) so the SDK re-registers over the new network interface and
+     * updates any active call session.
+     * @param arguments Map containing expires (0 keeps the previously
+     * negotiated expiry and forces an immediate re-register)
+     * @return 0 on success, error code otherwise
+     */
+    fun refreshRegistration(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val expires = (arguments["expires"] as? Int) ?: 0
+        return portSipSdk?.refreshRegistration(expires) ?: -1
+    }
+
+    /**
+     * Updates an active call session (sends a re-INVITE) to renegotiate the
+     * media streams — e.g. after a network change to re-anchor media to the
+     * new interface.
+     * @param arguments Map containing sessionId, enableAudio (default true)
+     * and enableVideo (default false)
+     * @return 0 on success, error code otherwise
+     */
+    fun updateCall(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        val enableAudio = (arguments["enableAudio"] as? Boolean) ?: true
+        val enableVideo = (arguments["enableVideo"] as? Boolean) ?: false
+        return portSipSdk?.updateCall(sessionId, enableAudio, enableVideo) ?: -1
+    }
+
+    /**
+     * Enables SIP session timers (RFC 4028) for subsequent calls so the server
+     * reaps a dead leg at expiry when the client stops refreshing.
+     * @param arguments Map containing timerSeconds (minimum 90) and refreshMode
+     * (0 = UAC/caller refreshes, 1 = UAS/callee)
+     * @return 0 on success, error code otherwise
+     */
+    fun enableSessionTimer(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val timerSeconds = (arguments["timerSeconds"] as? Int) ?: 90
+        val refreshMode = (arguments["refreshMode"] as? Int) ?: 0
+        return portSipSdk?.enableSessionTimer(timerSeconds, refreshMode) ?: -1
+    }
+
+    /**
      * Unregisters the SIP account from the SIP server.
      *
      * The SDK remains initialized after this call, so the account can be

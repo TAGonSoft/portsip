@@ -13,7 +13,16 @@ enum class PortsipMethodCall(val methodName: String) {
     
     /** Registers with the SIP server (should be called after register) */
     REGISTER_SERVER("registerServer"),
-    
+
+    /** Refreshes the registration after a network change (WiFi/cellular handoff) */
+    REFRESH_REGISTRATION("refreshRegistration"),
+
+    /** Updates an active call session (re-INVITE) to renegotiate media */
+    UPDATE_CALL("updateCall"),
+
+    /** Enables SIP session timers (RFC 4028) so dead legs are reaped at expiry */
+    ENABLE_SESSION_TIMER("enableSessionTimer"),
+
     /** Unregisters the SIP account from the SIP server (SDK stays initialized) */
     UNREGISTER("unRegister"),
     

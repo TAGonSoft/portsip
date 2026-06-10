@@ -61,6 +61,24 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.registerServer(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "registerServer", resultValue)
             result(resultValue)
+        case .refreshRegistration:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "refreshRegistration", arguments)
+            let resultValue = PortsipController.shared.refreshRegistration(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "refreshRegistration", resultValue)
+            result(resultValue)
+        case .updateCall:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "updateCall", arguments)
+            let resultValue = PortsipController.shared.updateCall(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "updateCall", resultValue)
+            result(resultValue)
+        case .enableSessionTimer:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "enableSessionTimer", arguments)
+            let resultValue = PortsipController.shared.enableSessionTimer(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "enableSessionTimer", resultValue)
+            result(resultValue)
         case .unRegister:
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "unRegister")
             PortsipController.shared.unRegister()

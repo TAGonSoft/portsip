@@ -673,6 +673,74 @@ class Portsip {
     );
   }
 
+  /// Refresh the registration with the SIP server
+  ///
+  /// Call this when the device's network changes (e.g. WiFi to cellular
+  /// handoff) — the SDK re-registers over the new network interface and
+  /// updates any active call session so audio resumes.
+  ///
+  /// [expires] - Registration expiry in seconds. Pass 0 (default) to keep the
+  /// previously negotiated expiry and force an immediate re-register.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> refreshRegistration({int expires = 0}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.refreshRegistration(expires: expires);
+  }
+
+  /// Enable SIP session timers (RFC 4028) for all subsequent calls.
+  ///
+  /// The call negotiates a `Session-Expires` interval and the refresher
+  /// periodically re-INVITEs/UPDATEs to keep it alive. If a party stops
+  /// refreshing (e.g. the client loses network mid-call), the other side
+  /// terminates the session at expiry — so the server reaps a dead leg in
+  /// ~[timerSeconds] instead of holding it open for minutes.
+  ///
+  /// [timerSeconds] - Session interval in seconds. Minimum 90 (SDK requirement).
+  /// [refreshMode] - 0 = caller/UAC refreshes (default), 1 = callee/UAS.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> enableSessionTimer({
+    int timerSeconds = 90,
+    int refreshMode = 0,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.enableSessionTimer(
+      timerSeconds: timerSeconds,
+      refreshMode: refreshMode,
+    );
+  }
+
+  /// Update an active call session (sends a re-INVITE)
+  ///
+  /// Renegotiates the media streams of an established call. Use it to add or
+  /// remove audio/video, or after a network change (WiFi ↔ cellular handoff)
+  /// to re-anchor the media streams to the new network interface.
+  ///
+  /// [sessionId] - The session ID of the call to update
+  /// [enableAudio] - true to keep/enable the audio stream (default: true)
+  /// [enableVideo] - true to enable the video stream (default: false)
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> updateCall({
+    required int sessionId,
+    bool enableAudio = true,
+    bool enableVideo = false,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.updateCall(
+      sessionId: sessionId,
+      enableAudio: enableAudio,
+      enableVideo: enableVideo,
+    );
+  }
+
   /// Unregister from the SIP server
   ///
   /// This method unregisters from the SIP server without releasing SDK resources.

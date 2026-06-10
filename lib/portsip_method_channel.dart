@@ -723,6 +723,80 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Refreshes the registration with the SIP server.
+  ///
+  /// Invokes the native 'refreshRegistration' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> refreshRegistration({int expires = 0}) async {
+    final args = {'expires': expires};
+    _logCall('refreshRegistration', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'refreshRegistration',
+        args,
+      );
+      _logResponse('refreshRegistration', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('refreshRegistration', e);
+      return -1;
+    }
+  }
+
+  /// Enables SIP session timers (RFC 4028).
+  ///
+  /// Invokes the native 'enableSessionTimer' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> enableSessionTimer({
+    int timerSeconds = 90,
+    int refreshMode = 0,
+  }) async {
+    final args = {'timerSeconds': timerSeconds, 'refreshMode': refreshMode};
+    _logCall('enableSessionTimer', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'enableSessionTimer',
+        args,
+      );
+      _logResponse('enableSessionTimer', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('enableSessionTimer', e);
+      return -1;
+    }
+  }
+
+  /// Updates an active call session (sends a re-INVITE).
+  ///
+  /// Invokes the native 'updateCall' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> updateCall({
+    required int sessionId,
+    bool enableAudio = true,
+    bool enableVideo = false,
+  }) async {
+    final args = {
+      'sessionId': sessionId,
+      'enableAudio': enableAudio,
+      'enableVideo': enableVideo,
+    };
+    _logCall('updateCall', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>('updateCall', args);
+      _logResponse('updateCall', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('updateCall', e);
+      return -1;
+    }
+  }
+
   /// Tears down the native SDK while keeping the plugin (and its event
   /// stream) alive. Used to swap SIP users at runtime.
   @override
