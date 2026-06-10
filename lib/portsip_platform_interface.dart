@@ -441,6 +441,53 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('registerServer has not been implemented.');
   }
 
+  /// Refreshes the registration with the SIP server.
+  ///
+  /// Call this when the device's network changes (e.g. WiFi to cellular
+  /// handoff) so the SDK re-registers over the new network interface.
+  ///
+  /// Parameters:
+  /// - [expires]: Registration expiry in seconds; 0 keeps the previously
+  ///   negotiated expiry and forces an immediate re-register (default: 0)
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> refreshRegistration({int expires = 0}) async {
+    throw UnimplementedError('refreshRegistration has not been implemented.');
+  }
+
+  /// Enables SIP session timers (RFC 4028) for subsequent calls so the server
+  /// reaps a dead leg at expiry when the client stops refreshing.
+  ///
+  /// Parameters:
+  /// - [timerSeconds]: Session interval in seconds (minimum 90).
+  /// - [refreshMode]: 0 = UAC (caller) refreshes, 1 = UAS (callee).
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> enableSessionTimer({
+    int timerSeconds = 90,
+    int refreshMode = 0,
+  }) async {
+    throw UnimplementedError('enableSessionTimer has not been implemented.');
+  }
+
+  /// Updates an active call session (sends a re-INVITE) to renegotiate the
+  /// media streams — e.g. after a network change to re-anchor media to the
+  /// new interface.
+  ///
+  /// Parameters:
+  /// - [sessionId]: The session ID of the call to update
+  /// - [enableAudio]: true to keep/enable the audio stream (default: true)
+  /// - [enableVideo]: true to enable the video stream (default: false)
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> updateCall({
+    required int sessionId,
+    bool enableAudio = true,
+    bool enableVideo = false,
+  }) async {
+    throw UnimplementedError('updateCall has not been implemented.');
+  }
+
   /// Tears down the native SDK so a different user can be loaded via
   /// [initialize] + [register] again, without shutting down the plugin.
   ///

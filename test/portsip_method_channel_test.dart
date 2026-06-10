@@ -54,6 +54,12 @@ void main() {
               return 0; // Success
             case 'registerServer':
               return 0; // Success
+            case 'refreshRegistration':
+              return 0; // Success
+            case 'updateCall':
+              return 0; // Success
+            case 'enableSessionTimer':
+              return 0; // Success
             case 'configureConnectionService':
               return 0; // Success
             case 'enableConnectionService':
@@ -804,6 +810,100 @@ void main() {
 
     test('returns result from native', () async {
       final result = await platform.registerServer();
+      expect(result, 0);
+    });
+  });
+
+  group('refreshRegistration', () {
+    test('calls method channel with correct method name', () async {
+      await platform.refreshRegistration();
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'refreshRegistration');
+    });
+
+    test('uses default expires of 0', () async {
+      await platform.refreshRegistration();
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['expires'], 0);
+    });
+
+    test('passes custom expires', () async {
+      await platform.refreshRegistration(expires: 120);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['expires'], 120);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.refreshRegistration();
+      expect(result, 0);
+    });
+  });
+
+  group('updateCall', () {
+    test('calls method channel with correct method name', () async {
+      await platform.updateCall(sessionId: 1);
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'updateCall');
+    });
+
+    test('uses default audio/video values', () async {
+      await platform.updateCall(sessionId: 1);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 1);
+      expect(args['enableAudio'], true);
+      expect(args['enableVideo'], false);
+    });
+
+    test('passes custom values', () async {
+      await platform.updateCall(
+        sessionId: 7,
+        enableAudio: false,
+        enableVideo: true,
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 7);
+      expect(args['enableAudio'], false);
+      expect(args['enableVideo'], true);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.updateCall(sessionId: 1);
+      expect(result, 0);
+    });
+  });
+
+  group('enableSessionTimer', () {
+    test('calls method channel with correct method name', () async {
+      await platform.enableSessionTimer();
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'enableSessionTimer');
+    });
+
+    test('uses default values (90s, UAC)', () async {
+      await platform.enableSessionTimer();
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['timerSeconds'], 90);
+      expect(args['refreshMode'], 0);
+    });
+
+    test('passes custom values', () async {
+      await platform.enableSessionTimer(timerSeconds: 120, refreshMode: 1);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['timerSeconds'], 120);
+      expect(args['refreshMode'], 1);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.enableSessionTimer();
       expect(result, 0);
     });
   });

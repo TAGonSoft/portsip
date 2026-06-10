@@ -9,7 +9,16 @@ enum PortsipMethodCall: String {
     
     /// Registers with the SIP server (should be called after register)
     case registerServer = "registerServer"
-    
+
+    /// Refreshes the registration after a network change (WiFi/cellular handoff)
+    case refreshRegistration = "refreshRegistration"
+
+    /// Updates an active call session (re-INVITE) to renegotiate media
+    case updateCall = "updateCall"
+
+    /// Enables SIP session timers (RFC 4028) so dead legs are reaped at expiry
+    case enableSessionTimer = "enableSessionTimer"
+
     /// Unregisters the SIP account from the SIP server (SDK stays initialized)
     case unRegister = "unRegister"
     

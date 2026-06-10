@@ -80,6 +80,30 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.REFRESH_REGISTRATION -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "refreshRegistration", arguments)
+                    val resultValue = PortsipController.shared.refreshRegistration(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "refreshRegistration", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.UPDATE_CALL -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "updateCall", arguments)
+                    val resultValue = PortsipController.shared.updateCall(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "updateCall", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.ENABLE_SESSION_TIMER -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "enableSessionTimer", arguments)
+                    val resultValue = PortsipController.shared.enableSessionTimer(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "enableSessionTimer", resultValue)
+                    result.success(resultValue)
+                }
+
                 PortsipMethodCall.UNREGISTER -> {
                     PortsipLogger.logCall(COMPONENT, "unRegister")
                     PortsipController.shared.unRegister()
