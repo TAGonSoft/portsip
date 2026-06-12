@@ -33,7 +33,28 @@ enum PortsipMethodCall: String {
     
     /// Resumes a call session that was previously on hold
     case unHold = "unHold"
-    
+
+    /// Swaps which of two calls is on hold (atomic CallKit mirror)
+    case swapHold = "swapHold"
+
+    /// Creates an audio conference bridge
+    case createAudioConference = "createAudioConference"
+
+    /// Joins a session into the existing conference
+    case joinToConference = "joinToConference"
+
+    /// Removes a session from the existing conference
+    case removeFromConference = "removeFromConference"
+
+    /// Destroys the existing conference bridge
+    case destroyConference = "destroyConference"
+
+    /// Collapses a merged conference to a single system call
+    case reportConferenceMerged = "reportConferenceMerged"
+
+    /// Updates the display name the system call UI shows for a session
+    case updateOsCallDisplay = "updateOsCallDisplay"
+
     /// Mutes or unmutes the audio for the current call session
     case muteSession = "muteSession"
     

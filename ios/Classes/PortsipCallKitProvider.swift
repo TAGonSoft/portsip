@@ -24,8 +24,38 @@ class PortsipCallKitProvider: NSObject {
     /// Maps PortSIP session IDs to CallKit UUIDs
     private var sessionToUUID: [Int: UUID] = [:]
 
+    /// Pending app-initiated hold mirrors per session, counted. The
+    /// CXSetHeldCallAction delegate consumes one per action so our own
+    /// requests aren't echoed back into the SDK. Counted rather than a set
+    /// because one session can have several mirrors in flight at once.
+    private var programmaticHoldCounts: [Int: Int] = [:]
+
+    /// Merged-conference tracking (set by [reportConferenceMerged], cleared
+    /// by [clearConferenceTracking]). After a merge only the primary leg has
+    /// a CXCall; if its session ends while another leg survives, the CXCall
+    /// is transferred to the survivor — ending the last CXCall would
+    /// deactivate the audio session and silence the surviving call.
+    private var conferencePrimarySession: Int?
+    private var conferenceMergedAwaySessions: Set<Int> = []
+
+    /// Last hold state applied to the SDK per session. Makes
+    /// CXSetHeldCallActions idempotent: iOS can deliver actions matching what
+    /// the SDK already did, and re-driving those sends redundant re-INVITEs
+    /// and duplicate events.
+    private var sessionHoldStates: [Int: Bool] = [:]
+
+    /// Display names to attach when the CXStartCallAction is performed —
+    /// the only point where an outgoing call's caller name reliably sticks.
+    private var pendingDisplayNames: [Int: String] = [:]
+
     /// Serial dispatch queue for synchronizing access to sessionToUUID dictionary
     private let sessionLock = DispatchQueue(label: "com.tagonsoft.portsip.callkit.session")
+
+    /// Serial queue that drives the SDK for system-initiated hold actions
+    /// off CallKit's callback thread — blocking the callback can time the
+    /// action out, making CallKit revert its call state. Serial so the two
+    /// actions of one Swap keep their order.
+    private let holdActionQueue = DispatchQueue(label: "com.tagonsoft.portsip.callkit.holdaction")
 
     /// Whether CallKit is currently enabled
     private(set) var isCallKitEnabled = false
@@ -62,8 +92,11 @@ class PortsipCallKitProvider: NSObject {
         // Create provider configuration (iOS 13 compatible)
         let config = CXProviderConfiguration(localizedName: appName)
         config.supportsVideo = true
-        config.maximumCallGroups = 1
-        config.maximumCallsPerCallGroup = 1
+        // Two so a second (conference) call can be reported alongside the first;
+        // this is what lets iOS show the held call + a "Swap" affordance in the
+        // Dynamic Island / call UI.
+        config.maximumCallGroups = 2
+        config.maximumCallsPerCallGroup = 2
         config.supportedHandleTypes = [.generic, .phoneNumber, .emailAddress]
         
         // Set icon if provided
@@ -125,6 +158,50 @@ class PortsipCallKitProvider: NSObject {
     private func removeSession(_ sessionId: Int) {
         sessionLock.sync {
             sessionToUUID.removeValue(forKey: sessionId)
+            programmaticHoldCounts.removeValue(forKey: sessionId)
+            sessionHoldStates.removeValue(forKey: sessionId)
+            pendingDisplayNames.removeValue(forKey: sessionId)
+        }
+    }
+
+    /// Registers one pending programmatic hold mirror for [sessionId].
+    private func markProgrammaticHold(_ sessionId: Int) {
+        sessionLock.sync {
+            programmaticHoldCounts[sessionId, default: 0] += 1
+        }
+    }
+
+    /// Consumes one pending programmatic hold for [sessionId]. Returns false
+    /// when none is pending (the action is user/system-initiated). Also used
+    /// to roll a mark back when a transaction request fails (the delegate
+    /// won't fire for it).
+    private func consumeProgrammaticHold(_ sessionId: Int) -> Bool {
+        return sessionLock.sync {
+            guard let count = programmaticHoldCounts[sessionId], count > 0 else {
+                return false
+            }
+            if count == 1 {
+                programmaticHoldCounts.removeValue(forKey: sessionId)
+            } else {
+                programmaticHoldCounts[sessionId] = count - 1
+            }
+            return true
+        }
+    }
+
+    /// Records the hold state just applied to the SDK for [sessionId]. Called
+    /// by every path that successfully drives the SDK hold/unhold.
+    func noteHoldState(sessionId: Int, onHold: Bool) {
+        sessionLock.sync {
+            sessionHoldStates[sessionId] = onHold
+        }
+    }
+
+    /// The last hold state applied to the SDK for [sessionId], or nil if its
+    /// hold was never touched.
+    func holdState(for sessionId: Int) -> Bool? {
+        return sessionLock.sync {
+            return sessionHoldStates[sessionId]
         }
     }
 
@@ -163,6 +240,11 @@ class PortsipCallKitProvider: NSObject {
     private func removeAllSessions() {
         sessionLock.sync {
             sessionToUUID.removeAll()
+            programmaticHoldCounts.removeAll()
+            sessionHoldStates.removeAll()
+            pendingDisplayNames.removeAll()
+            conferencePrimarySession = nil
+            conferenceMergedAwaySessions.removeAll()
         }
     }
 
@@ -202,13 +284,18 @@ class PortsipCallKitProvider: NSObject {
     ///   - sessionId: The PortSIP session ID
     ///   - callee: The callee's identifier (phone number or SIP URI)
     ///   - hasVideo: Whether the call has video
-    func reportOutgoingCall(sessionId: Int, callee: String, hasVideo: Bool) {
+    ///   - displayName: Name the system call UI shows; must be supplied at
+    ///     call time — outgoing calls don't reliably honor later updates.
+    func reportOutgoingCall(sessionId: Int, callee: String, hasVideo: Bool, displayName: String? = nil) {
         guard isCallKitEnabled, let provider = provider else {
             return
         }
 
         let uuid = UUID()
         setUUID(uuid, for: sessionId)
+        if let displayName = displayName {
+            sessionLock.sync { pendingDisplayNames[sessionId] = displayName }
+        }
 
         let handle = CXHandle(type: .phoneNumber, value: callee)
         let startCallAction = CXStartCallAction(call: uuid, handle: handle)
@@ -277,14 +364,165 @@ class PortsipCallKitProvider: NSObject {
             return
         }
 
+        // Mark this as self-requested so the CXSetHeldCallAction delegate skips
+        // the redundant SDK hold + event echo (see programmaticHoldCounts).
+        markProgrammaticHold(sessionId)
+        PortsipLogger.d(
+            PortsipCallKitProvider.COMPONENT,
+            "reportCallHeld requesting session=\(sessionId) onHold=\(onHold)"
+        )
+
         let action = CXSetHeldCallAction(call: uuid, onHold: onHold)
         let transaction = CXTransaction(action: action)
 
-        callController.request(transaction) { error in
+        callController.request(transaction) { [weak self] error in
             if let error = error {
+                // The delegate won't fire on failure — roll the mark back so a
+                // later genuine system hold isn't swallowed.
+                _ = self?.consumeProgrammaticHold(sessionId)
                 PortsipLogger.e(PortsipCallKitProvider.COMPONENT, "Failed to set hold state for session \(sessionId): \(error.localizedDescription)")
             }
         }
+    }
+
+    /// Mirrors an app-initiated swap to CallKit as ONE atomic CXTransaction.
+    /// Two separate transactions let CallKit observe two active calls in
+    /// between, and it enforces its one-active-call rule by ending one of
+    /// them. Both actions are flagged programmatic.
+    func reportCallsSwapped(holdSessionId: Int, unholdSessionId: Int) {
+        guard isCallKitEnabled,
+              let holdUUID = getUUIDThreadSafe(for: holdSessionId),
+              let unholdUUID = getUUIDThreadSafe(for: unholdSessionId) else { return }
+
+        markProgrammaticHold(holdSessionId)
+        markProgrammaticHold(unholdSessionId)
+        PortsipLogger.d(
+            PortsipCallKitProvider.COMPONENT,
+            "reportCallsSwapped requesting hold=\(holdSessionId) unhold=\(unholdSessionId) (atomic)"
+        )
+
+        let transaction = CXTransaction(actions: [
+            CXSetHeldCallAction(call: holdUUID, onHold: true),
+            CXSetHeldCallAction(call: unholdUUID, onHold: false),
+        ])
+
+        callController.request(transaction) { [weak self] error in
+            if let error = error {
+                // The delegate won't fire on failure — roll the marks back so a
+                // later genuine system hold isn't swallowed.
+                _ = self?.consumeProgrammaticHold(holdSessionId)
+                _ = self?.consumeProgrammaticHold(unholdSessionId)
+                PortsipLogger.e(
+                    PortsipCallKitProvider.COMPONENT,
+                    "Failed to mirror swap (hold \(holdSessionId) / unhold \(unholdSessionId)): \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    /// Collapses a now-merged conference to a single system call: ends the
+    /// CallKit calls for the merged-away legs (their SIP sessions stay live in
+    /// the SDK conference bridge) so the OS shows one call, not several.
+    /// - Parameters:
+    ///   - primarySessionId: The leg whose CallKit call represents the conference.
+    ///   - mergedAwaySessionIds: The other legs whose CallKit calls to end.
+    func reportConferenceMerged(primarySessionId: Int, mergedAwaySessionIds: [Int]) {
+        guard isCallKitEnabled, let provider = provider else { return }
+        sessionLock.sync {
+            conferencePrimarySession = primarySessionId
+            conferenceMergedAwaySessions = Set(mergedAwaySessionIds)
+        }
+
+        let endMergedAway = { [weak self] in
+            guard let self = self else { return }
+            for sessionId in mergedAwaySessionIds {
+                guard let uuid = self.getUUIDThreadSafe(for: sessionId) else { continue }
+                provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+                self.removeSession(sessionId)
+            }
+        }
+
+        // Resume the primary FIRST and end the merged-away calls only after
+        // the unhold has been applied (the request completion fires after the
+        // delegate fulfilled it). Ending them while the primary is still held
+        // leaves CallKit with no active call, and it deactivates the audio
+        // session mid-merge.
+        guard let primaryUUID = getUUIDThreadSafe(for: primarySessionId) else {
+            endMergedAway()
+            return
+        }
+        markProgrammaticHold(primarySessionId)
+        let action = CXSetHeldCallAction(call: primaryUUID, onHold: false)
+        callController.request(CXTransaction(action: action)) { [weak self] error in
+            if let error = error {
+                _ = self?.consumeProgrammaticHold(primarySessionId)
+                PortsipLogger.e(
+                    PortsipCallKitProvider.COMPONENT,
+                    "Conference-merge unhold of \(primarySessionId) failed: \(error.localizedDescription)"
+                )
+            }
+            endMergedAway()
+        }
+    }
+
+    /// A SIP session is ending. If it's the merged-conference primary and a
+    /// merged-away leg survives, the CXCall is re-mapped to the survivor (the
+    /// new primary) and its session id is returned — the caller must then NOT
+    /// end the CXCall or stop the audio engine. Returns nil when no transfer
+    /// applies, after pruning [endingSessionId] from the tracking.
+    func transferSystemCallIfNeeded(endingSessionId: Int) -> Int? {
+        return sessionLock.sync {
+            if conferencePrimarySession != endingSessionId {
+                conferenceMergedAwaySessions.remove(endingSessionId)
+                return nil
+            }
+            guard let survivor = conferenceMergedAwaySessions.first,
+                  let uuid = sessionToUUID.removeValue(forKey: endingSessionId) else {
+                conferencePrimarySession = nil
+                conferenceMergedAwaySessions.removeAll()
+                return nil
+            }
+            sessionToUUID[survivor] = uuid
+            programmaticHoldCounts.removeValue(forKey: endingSessionId)
+            conferenceMergedAwaySessions.remove(survivor)
+            conferencePrimarySession = survivor
+            return survivor
+        }
+    }
+
+    /// The conference is over (bridge destroyed) — stop tracking it. Existing
+    /// session→UUID mappings are untouched.
+    func clearConferenceTracking() {
+        sessionLock.sync {
+            conferencePrimarySession = nil
+            conferenceMergedAwaySessions.removeAll()
+        }
+    }
+
+    /// Updates the name the system call UI shows for a call — used after a
+    /// merge (conference title) or a transferred CXCall (see
+    /// [transferSystemCallIfNeeded]) so it stops displaying a single/ended leg.
+    func updateCallDisplay(sessionId: Int, displayName: String) {
+        guard isCallKitEnabled, let provider = provider,
+              let uuid = getUUIDThreadSafe(for: sessionId) else {
+            PortsipLogger.e(
+                PortsipCallKitProvider.COMPONENT,
+                "updateCallDisplay: no CXCall for session \(sessionId)"
+            )
+            return
+        }
+        let update = CXCallUpdate()
+        update.localizedCallerName = displayName
+        // For OUTGOING calls iOS derives the on-screen identity from the
+        // call's HANDLE (with its own contact resolution) and ignores a bare
+        // localizedCallerName update. Re-handle the call with a generic
+        // handle carrying the display string so the system UI shows it.
+        update.remoteHandle = CXHandle(type: .generic, value: displayName)
+        provider.reportCall(with: uuid, updated: update)
+        PortsipLogger.d(
+            PortsipCallKitProvider.COMPONENT,
+            "updateCallDisplay session=\(sessionId) → \"\(displayName)\""
+        )
     }
 
     /// Updates the mute state of a call.
@@ -381,13 +619,18 @@ extension PortsipCallKitProvider: CXProviderDelegate {
         removeAllSessions()
     }
     
-    /// Called when the audio session is activated - handle speaker routing here.
+    /// Called when CallKit activates the shared audio session. CallKit owns
+    /// activation around hold/unhold/swap, so the SDK audio engine must follow
+    /// it here or the call goes silent after a hold/swap/merge.
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        // Audio route monitoring is set up in configure() method
+        PortsipLogger.d(PortsipCallKitProvider.COMPONENT, "audio session ACTIVATED → startAudio")
+        PortsipController.shared.activateAudioSession()
     }
-    
-    /// Called when the audio session is deactivated.
+
+    /// Called when CallKit deactivates the shared audio session (held / ended).
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        PortsipLogger.d(PortsipCallKitProvider.COMPONENT, "audio session DEACTIVATED → stopAudio")
+        PortsipController.shared.deactivateAudioSession()
     }
     
     /// Called when the user answers an incoming call.
@@ -416,13 +659,57 @@ extension PortsipCallKitProvider: CXProviderDelegate {
             action.fail()
             return
         }
-                
-        // Notify PortsipController to hold/unhold the call
-        PortsipController.shared.handleCallKitHold(sessionId: sessionId, onHold: action.isOnHold)
-        
+
+        // Programmatic actions (our own reportCallHeld mirrors) and actions
+        // matching the SDK's current hold state are only confirmed — driving
+        // the SDK again would echo redundant re-INVITEs and events.
+        let isProgrammatic = consumeProgrammaticHold(sessionId)
+        PortsipLogger.d(
+            PortsipCallKitProvider.COMPONENT,
+            "CXSetHeldCallAction session=\(sessionId) onHold=\(action.isOnHold) " +
+            "programmatic=\(isProgrammatic) tracked=\(String(describing: holdState(for: sessionId)))"
+        )
+        if !isProgrammatic && holdState(for: sessionId) != action.isOnHold {
+            // Record the target state and notify Flutter up front so the two
+            // actions of one Swap reach the app together; the SDK work runs
+            // behind on holdActionQueue and the action is fulfilled first.
+            noteHoldState(sessionId: sessionId, onHold: action.isOnHold)
+            PortsipController.shared.notifyCallKitHold(sessionId: sessionId, onHold: action.isOnHold)
+            holdActionQueue.async {
+                PortsipController.shared.handleCallKitHold(sessionId: sessionId, onHold: action.isOnHold)
+            }
+        }
+
         action.fulfill()
     }
     
+    /// Called when the user taps Merge in the system call UI: CallKit groups
+    /// one call with another. The SDK-side conference bridge is owned by the
+    /// Dart layer (it also drives the in-app merge), so just notify Flutter
+    /// and confirm the action. Without this handler the action fails and the
+    /// system Merge button does nothing.
+    func provider(_ provider: CXProvider, perform action: CXSetGroupCallAction) {
+        guard let sessionId = getSessionId(for: action.callUUID) else {
+            action.fail()
+            return
+        }
+        PortsipLogger.d(
+            PortsipCallKitProvider.COMPONENT,
+            "CXSetGroupCallAction session=\(sessionId) groupWith=\(String(describing: action.callUUIDToGroupWith))"
+        )
+        if let otherUUID = action.callUUIDToGroupWith,
+           let otherSessionId = getSessionId(for: otherUUID) {
+            let eventData: [String: Any] = [
+                "sessionId": sessionId,
+                "otherSessionId": otherSessionId
+            ]
+            PortsipEventBridge.shared.sendEvent(name: "onCallKitMerge", data: eventData)
+        }
+        // Ungrouping (callUUIDToGroupWith == nil) isn't offered by our UI;
+        // fulfill it as a no-op rather than failing the transaction.
+        action.fulfill()
+    }
+
     /// Called when the user mutes or unmutes a call.
     func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
         guard let sessionId = getSessionId(for: action.callUUID) else {
@@ -438,8 +725,14 @@ extension PortsipCallKitProvider: CXProviderDelegate {
     
     /// Called when an outgoing call starts connecting.
     func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
-        
-        // The call was already initiated by PortsipController, just fulfill the action
+        // The call was already initiated by PortsipController. Attach the
+        // caller name now — outgoing calls don't reliably honor later updates.
+        if let sessionId = getSessionId(for: action.callUUID),
+           let name = sessionLock.sync(execute: { pendingDisplayNames.removeValue(forKey: sessionId) }) {
+            let update = CXCallUpdate()
+            update.localizedCallerName = name
+            provider.reportCall(with: action.callUUID, updated: update)
+        }
         action.fulfill()
     }
     

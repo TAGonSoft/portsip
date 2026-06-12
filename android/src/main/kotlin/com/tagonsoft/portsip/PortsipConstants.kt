@@ -19,6 +19,9 @@ object PortsipConstants {
 
         /** Key for whether the call has video (Boolean) */
         const val HAS_VIDEO = "hasVideo"
+
+        /** Key for the callee display name (String) */
+        const val DISPLAY_NAME = "displayName"
     }
 
     /**

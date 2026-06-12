@@ -143,6 +143,60 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.SWAP_HOLD -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "swapHold", arguments)
+                    val resultValue = PortsipController.shared.swapHold(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "swapHold", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.CREATE_AUDIO_CONFERENCE -> {
+                    PortsipLogger.logCall(COMPONENT, "createAudioConference")
+                    val resultValue = PortsipController.shared.createAudioConference()
+                    PortsipLogger.logResponse(COMPONENT, "createAudioConference", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.JOIN_TO_CONFERENCE -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "joinToConference", arguments)
+                    val resultValue = PortsipController.shared.joinToConference(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "joinToConference", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.REMOVE_FROM_CONFERENCE -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "removeFromConference", arguments)
+                    val resultValue = PortsipController.shared.removeFromConference(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "removeFromConference", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.DESTROY_CONFERENCE -> {
+                    PortsipLogger.logCall(COMPONENT, "destroyConference")
+                    val resultValue = PortsipController.shared.destroyConference()
+                    PortsipLogger.logResponse(COMPONENT, "destroyConference", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.REPORT_CONFERENCE_MERGED -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "reportConferenceMerged", arguments)
+                    val resultValue = PortsipController.shared.reportConferenceMerged(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "reportConferenceMerged", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.UPDATE_OS_CALL_DISPLAY -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "updateOsCallDisplay", arguments)
+                    val resultValue = PortsipController.shared.updateOsCallDisplay(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "updateOsCallDisplay", resultValue)
+                    result.success(resultValue)
+                }
+
                 PortsipMethodCall.MUTE_SESSION -> {
                     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
                     PortsipLogger.logCall(COMPONENT, "muteSession", arguments)

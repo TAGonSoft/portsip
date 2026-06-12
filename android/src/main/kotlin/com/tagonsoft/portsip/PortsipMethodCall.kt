@@ -37,7 +37,28 @@ enum class PortsipMethodCall(val methodName: String) {
     
     /** Resumes a call session that was previously on hold */
     UNHOLD("unHold"),
-    
+
+    /** Swaps which of two calls is on hold */
+    SWAP_HOLD("swapHold"),
+
+    /** Creates an audio conference bridge */
+    CREATE_AUDIO_CONFERENCE("createAudioConference"),
+
+    /** Joins a session into the existing conference */
+    JOIN_TO_CONFERENCE("joinToConference"),
+
+    /** Removes a session from the existing conference */
+    REMOVE_FROM_CONFERENCE("removeFromConference"),
+
+    /** Destroys the existing conference bridge */
+    DESTROY_CONFERENCE("destroyConference"),
+
+    /** Collapses a merged conference to a single system call */
+    REPORT_CONFERENCE_MERGED("reportConferenceMerged"),
+
+    /** Updates the display name the system call UI shows for a session */
+    UPDATE_OS_CALL_DISPLAY("updateOsCallDisplay"),
+
     /** Mutes or unmutes the audio for the current call session */
     MUTE_SESSION("muteSession"),
     

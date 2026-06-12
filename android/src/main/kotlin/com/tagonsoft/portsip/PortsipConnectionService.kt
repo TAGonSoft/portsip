@@ -49,6 +49,17 @@ class PortsipConnectionService : ConnectionService() {
         /** Lock for synchronizing connection operations */
         private val connectionLock = Any()
 
+        /**
+         * Merged-conference tracking (set by [reportConferenceMerged], cleared
+         * by [clearConferenceTracking]). After a merge only the primary leg
+         * has a Connection; if its session ends while another leg survives,
+         * the Connection is transferred to the survivor — destroying the last
+         * Connection tears down the call audio route. Guarded by
+         * [connectionLock].
+         */
+        private var conferencePrimarySession: Long? = null
+        private val conferenceMergedAwaySessions = mutableSetOf<Long>()
+
         /** Whether ConnectionService is currently enabled */
         @Volatile
         var isEnabled = false
@@ -144,6 +155,8 @@ class PortsipConnectionService : ConnectionService() {
                     connection.destroy()
                 }
                 sessionToConnection.clear()
+                conferencePrimarySession = null
+                conferenceMergedAwaySessions.clear()
             }
 
             // Unregister phone account
@@ -173,8 +186,15 @@ class PortsipConnectionService : ConnectionService() {
          * @param sessionId PortSIP session ID
          * @param callee The callee's identifier
          * @param hasVideo Whether the call has video
+         * @param displayName Name shown in the system call UI (callee if null)
          */
-        fun reportOutgoingCall(context: Context, sessionId: Long, callee: String, hasVideo: Boolean) {
+        fun reportOutgoingCall(
+            context: Context,
+            sessionId: Long,
+            callee: String,
+            hasVideo: Boolean,
+            displayName: String? = null
+        ) {
             if (!isEnabled) {
                 PortsipLogger.d(COMPONENT, "ConnectionService not enabled, skipping outgoing call report")
                 return
@@ -185,6 +205,27 @@ class PortsipConnectionService : ConnectionService() {
             } ?: run {
                 PortsipLogger.e(COMPONENT, "Phone account handle not initialized")
                 return
+            }
+
+            // Reap connections Telecom already considers finished (ghosts from a
+            // previous call whose SIP BYE never made it out). We must NOT reap a
+            // genuinely active/held call: a conference adds a second call while the
+            // first is still up (held), and both need to coexist so the system UI
+            // can offer Hold/Swap. Only DISCONNECTED leftovers are cleared.
+            synchronized(connectionLock) {
+                val stale = sessionToConnection.filterValues {
+                    it.state == Connection.STATE_DISCONNECTED
+                }
+                if (stale.isNotEmpty()) {
+                    PortsipLogger.w(
+                        COMPONENT,
+                        "Reaping ${stale.size} disconnected connection(s) before new call"
+                    )
+                    stale.forEach { (sid, conn) ->
+                        conn.destroy()
+                        sessionToConnection.remove(sid)
+                    }
+                }
             }
 
             try {
@@ -207,6 +248,9 @@ class PortsipConnectionService : ConnectionService() {
                     putLong(PortsipConstants.BundleExtras.SESSION_ID, sessionId)
                     putString(PortsipConstants.BundleExtras.CALLEE, callee)
                     putBoolean(PortsipConstants.BundleExtras.HAS_VIDEO, hasVideo)
+                    displayName?.let {
+                        putString(PortsipConstants.BundleExtras.DISPLAY_NAME, it)
+                    }
                 }
                 val extras = Bundle().apply {
                     putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
@@ -256,6 +300,91 @@ class PortsipConnectionService : ConnectionService() {
                     sessionToConnection.remove(sessionId)
                     PortsipLogger.d(COMPONENT, "Call ended for session $sessionId with reason $reason")
                 }
+            }
+        }
+
+        /**
+         * Collapses a merged conference to a single system call: ends the
+         * connections for the merged-away legs (their SIP sessions stay live in
+         * the SDK conference bridge) so the OS shows one call, not several.
+         *
+         * @param primarySessionId The leg whose connection represents the conference
+         * @param mergedAwaySessionIds The other legs whose connections to end
+         */
+        fun reportConferenceMerged(primarySessionId: Long, mergedAwaySessionIds: List<Long>) {
+            if (!isEnabled) return
+
+            synchronized(connectionLock) {
+                mergedAwaySessionIds.forEach { sessionId ->
+                    sessionToConnection[sessionId]?.let { connection ->
+                        connection.setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
+                        connection.destroy()
+                        sessionToConnection.remove(sessionId)
+                    }
+                }
+                conferencePrimarySession = primarySessionId
+                conferenceMergedAwaySessions.clear()
+                conferenceMergedAwaySessions.addAll(mergedAwaySessionIds)
+                // Surviving call must not look held in the system UI.
+                sessionToConnection[primarySessionId]?.setActive()
+            }
+        }
+
+        /**
+         * A SIP session is ending. If it's the merged-conference primary and
+         * a merged-away leg survives, the Connection is re-keyed to the
+         * survivor (the new primary) and its session id is returned — the
+         * caller must then NOT destroy the Connection. Returns null when no
+         * transfer applies, after pruning [endingSessionId] from the tracking.
+         */
+        fun transferSystemCallIfNeeded(endingSessionId: Long): Long? {
+            synchronized(connectionLock) {
+                if (conferencePrimarySession != endingSessionId) {
+                    conferenceMergedAwaySessions.remove(endingSessionId)
+                    return null
+                }
+                val survivor = conferenceMergedAwaySessions.firstOrNull()
+                val connection = sessionToConnection.remove(endingSessionId)
+                if (survivor == null || connection == null) {
+                    conferencePrimarySession = null
+                    conferenceMergedAwaySessions.clear()
+                    return null
+                }
+                connection.adoptSession(survivor)
+                sessionToConnection[survivor] = connection
+                conferenceMergedAwaySessions.remove(survivor)
+                conferencePrimarySession = survivor
+                PortsipLogger.d(
+                    COMPONENT,
+                    "System call transferred from ended session $endingSessionId to $survivor"
+                )
+                return survivor
+            }
+        }
+
+        /**
+         * The conference is over (bridge destroyed) — stop tracking it.
+         * Existing session→Connection mappings are untouched.
+         */
+        fun clearConferenceTracking() {
+            synchronized(connectionLock) {
+                conferencePrimarySession = null
+                conferenceMergedAwaySessions.clear()
+            }
+        }
+
+        /**
+         * Updates the name the system call UI shows for a call — used after a
+         * transferred Connection (see [transferSystemCallIfNeeded]) so it stops
+         * displaying the leg that ended.
+         */
+        fun updateCallDisplay(sessionId: Long, displayName: String) {
+            if (!isEnabled) return
+
+            synchronized(connectionLock) {
+                sessionToConnection[sessionId]?.setCallerDisplayName(
+                    displayName, TelecomManager.PRESENTATION_ALLOWED
+                )
             }
         }
 
@@ -369,10 +498,12 @@ class PortsipConnectionService : ConnectionService() {
         val sessionId = request?.extras?.getLong(PortsipConstants.BundleExtras.SESSION_ID) ?: -1L
         val callee = request?.extras?.getString(PortsipConstants.BundleExtras.CALLEE) ?: ""
         val hasVideo = request?.extras?.getBoolean(PortsipConstants.BundleExtras.HAS_VIDEO) ?: false
+        val displayName =
+            request?.extras?.getString(PortsipConstants.BundleExtras.DISPLAY_NAME)
 
         val connection = PortsipConnection(applicationContext, sessionId).apply {
             setAddress(request?.address, TelecomManager.PRESENTATION_ALLOWED)
-            setCallerDisplayName(callee, TelecomManager.PRESENTATION_ALLOWED)
+            setCallerDisplayName(displayName ?: callee, TelecomManager.PRESENTATION_ALLOWED)
             connectionCapabilities = Connection.CAPABILITY_MUTE or
                     Connection.CAPABILITY_HOLD or
                     Connection.CAPABILITY_SUPPORT_HOLD

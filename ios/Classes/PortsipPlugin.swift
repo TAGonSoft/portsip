@@ -108,6 +108,46 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.unHold(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "unHold", resultValue)
             result(resultValue)
+        case .createAudioConference:
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "createAudioConference")
+            let resultValue = PortsipController.shared.createAudioConference()
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "createAudioConference", resultValue)
+            result(resultValue)
+        case .joinToConference:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "joinToConference", arguments)
+            let resultValue = PortsipController.shared.joinToConference(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "joinToConference", resultValue)
+            result(resultValue)
+        case .removeFromConference:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "removeFromConference", arguments)
+            let resultValue = PortsipController.shared.removeFromConference(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "removeFromConference", resultValue)
+            result(resultValue)
+        case .destroyConference:
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "destroyConference")
+            let resultValue = PortsipController.shared.destroyConference()
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "destroyConference", resultValue)
+            result(resultValue)
+        case .reportConferenceMerged:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "reportConferenceMerged", arguments)
+            let resultValue = PortsipController.shared.reportConferenceMerged(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "reportConferenceMerged", resultValue)
+            result(resultValue)
+        case .swapHold:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "swapHold", arguments)
+            let resultValue = PortsipController.shared.swapHold(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "swapHold", resultValue)
+            result(resultValue)
+        case .updateOsCallDisplay:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "updateOsCallDisplay", arguments)
+            let resultValue = PortsipController.shared.updateOsCallDisplay(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "updateOsCallDisplay", resultValue)
+            result(resultValue)
         case .muteSession:
             let arguments = call.arguments as? [String: Any] ?? [:]
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "muteSession", arguments)

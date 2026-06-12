@@ -286,16 +286,27 @@ class Portsip {
   /// for cross-platform compatibility. See class documentation for details.
   ///
   /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  /// [reportToConnectionService] - Whether to report this call to the system
+  /// call UI (CallKit / Android ConnectionService). Pass false for additional
+  /// conference legs so the whole conference stays one system call.
+  ///
+  /// [displayName] - Name the system call UI shows for the callee. The number
+  /// is shown when omitted. Set it at call time: iOS does not reliably honor
+  /// display updates on outgoing calls after they start.
   Future<int> makeCall({
     required String callee,
     required bool sendSdp,
     required bool videoCall,
+    bool reportToConnectionService = true,
+    String? displayName,
   }) async {
     _checkInitialized();
     return await PortsipPlatform.instance.makeCall(
       callee: callee,
       sendSdp: sendSdp,
       videoCall: videoCall,
+      reportToConnectionService: reportToConnectionService,
+      displayName: displayName,
     );
   }
 
@@ -306,9 +317,18 @@ class Portsip {
   /// Returns 0 if successful
   ///
   /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
-  Future<int> hangUp({required int sessionId}) async {
+  /// [reportToConnectionService] - When false, drops just this SIP session
+  /// without ending the system call (CallKit / ConnectionService) or stopping
+  /// the shared audio session. Use for removing a single conference leg.
+  Future<int> hangUp({
+    required int sessionId,
+    bool reportToConnectionService = true,
+  }) async {
     _checkInitialized();
-    return await PortsipPlatform.instance.hangUp(sessionId: sessionId);
+    return await PortsipPlatform.instance.hangUp(
+      sessionId: sessionId,
+      reportToConnectionService: reportToConnectionService,
+    );
   }
 
   /// Put a call on hold
@@ -333,6 +353,117 @@ class Portsip {
   Future<int> unHold({required int sessionId}) async {
     _checkInitialized();
     return await PortsipPlatform.instance.unHold(sessionId: sessionId);
+  }
+
+  /// Swap which of two calls is on hold: put [holdSessionId] on hold and
+  /// resume [unholdSessionId] in one native call.
+  ///
+  /// Prefer this over separate [hold]/[unHold] calls when swapping: on iOS
+  /// the CallKit mirror must be a single atomic transaction, or CallKit can
+  /// end one of the calls (one-active-call enforcement).
+  ///
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> swapHold({
+    required int holdSessionId,
+    required int unholdSessionId,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.swapHold(
+      holdSessionId: holdSessionId,
+      unholdSessionId: unholdSessionId,
+    );
+  }
+
+  /// Create an audio conference bridge. Sessions joined via [joinToConference]
+  /// are mixed together so all participants hear each other.
+  ///
+  /// Returns the conference id (>= 0) on success, or an error code (< 0).
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> createAudioConference() async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.createAudioConference();
+  }
+
+  /// Join a session into the existing conference. The session must not be on
+  /// hold — un-hold it first.
+  ///
+  /// [sessionId] - The session ID to join into the conference.
+  ///
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> joinToConference({required int sessionId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.joinToConference(sessionId: sessionId);
+  }
+
+  /// Remove a session from the existing conference.
+  ///
+  /// [sessionId] - The session ID to remove from the conference.
+  ///
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> removeFromConference({required int sessionId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.removeFromConference(
+      sessionId: sessionId,
+    );
+  }
+
+  /// Destroy the existing conference bridge.
+  ///
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> destroyConference() async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.destroyConference();
+  }
+
+  /// Collapse a merged conference to a SINGLE system call: ends the CallKit /
+  /// ConnectionService calls for the merged-away legs (their SIP sessions stay
+  /// live in the conference bridge) so the OS shows one call instead of several.
+  ///
+  /// [primarySessionId] - The leg whose system call represents the conference.
+  /// [mergedAwaySessionIds] - The other legs whose system calls to end.
+  ///
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> reportConferenceMerged({
+    required int primarySessionId,
+    required List<int> mergedAwaySessionIds,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.reportConferenceMerged(
+      primarySessionId: primarySessionId,
+      mergedAwaySessionIds: mergedAwaySessionIds,
+    );
+  }
+
+  /// Update the display name the system call UI (CallKit / ConnectionService)
+  /// shows for [sessionId]'s call — e.g. a conference title after a merge.
+  /// No-op for sessions without a system call.
+  ///
+  /// On iOS this also re-handles the call with a generic handle carrying the
+  /// display string (outgoing calls otherwise ignore caller-name updates).
+  ///
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> updateOsCallDisplay({
+    required int sessionId,
+    required String displayName,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.updateOsCallDisplay(
+      sessionId: sessionId,
+      displayName: displayName,
+    );
   }
 
   /// Mute or unmute a session

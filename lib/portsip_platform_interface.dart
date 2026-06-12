@@ -132,6 +132,8 @@ abstract class PortsipPlatform extends PlatformInterface {
     required String callee,
     required bool sendSdp,
     required bool videoCall,
+    bool reportToConnectionService = true,
+    String? displayName,
   }) async {
     throw UnimplementedError('makeCall has not been implemented.');
   }
@@ -142,7 +144,15 @@ abstract class PortsipPlatform extends PlatformInterface {
   /// - [sessionId]: The session ID of the call to terminate
   ///
   /// Returns 0 on success, negative error code on failure.
-  Future<int> hangUp({required int sessionId}) async {
+  ///
+  /// [reportToConnectionService]: when false, hangs up the SIP session directly
+  /// without touching the system call UI (CallKit / ConnectionService) or the
+  /// shared audio session. Pass false to drop a single conference leg while the
+  /// rest of the conference keeps running.
+  Future<int> hangUp({
+    required int sessionId,
+    bool reportToConnectionService = true,
+  }) async {
     throw UnimplementedError('hangUp has not been implemented.');
   }
 
@@ -164,6 +174,70 @@ abstract class PortsipPlatform extends PlatformInterface {
   /// Returns 0 on success, negative error code on failure.
   Future<int> unHold({required int sessionId}) async {
     throw UnimplementedError('unHold has not been implemented.');
+  }
+
+  /// Swaps which of two calls is on hold: holds [holdSessionId], resumes
+  /// [unholdSessionId], and mirrors both to the system call UI atomically.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> swapHold({
+    required int holdSessionId,
+    required int unholdSessionId,
+  }) async {
+    throw UnimplementedError('swapHold has not been implemented.');
+  }
+
+  /// Creates an audio conference bridge. Joined sessions are mixed together.
+  ///
+  /// Returns the conference id (>= 0) on success, negative error code on failure.
+  Future<int> createAudioConference() async {
+    throw UnimplementedError('createAudioConference has not been implemented.');
+  }
+
+  /// Joins a session into the existing conference. The session must not be on
+  /// hold (un-hold first).
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> joinToConference({required int sessionId}) async {
+    throw UnimplementedError('joinToConference has not been implemented.');
+  }
+
+  /// Removes a session from the existing conference.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> removeFromConference({required int sessionId}) async {
+    throw UnimplementedError('removeFromConference has not been implemented.');
+  }
+
+  /// Destroys the existing conference bridge.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> destroyConference() async {
+    throw UnimplementedError('destroyConference has not been implemented.');
+  }
+
+  /// Collapses a merged conference to a single system call by ending the
+  /// CallKit / ConnectionService calls for the merged-away legs.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> reportConferenceMerged({
+    required int primarySessionId,
+    required List<int> mergedAwaySessionIds,
+  }) async {
+    throw UnimplementedError(
+      'reportConferenceMerged has not been implemented.',
+    );
+  }
+
+  /// Updates the display name the system call UI (CallKit / ConnectionService)
+  /// shows for a session's call.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> updateOsCallDisplay({
+    required int sessionId,
+    required String displayName,
+  }) async {
+    throw UnimplementedError('updateOsCallDisplay has not been implemented.');
   }
 
   /// Mutes or unmutes audio/video streams for a call session.
