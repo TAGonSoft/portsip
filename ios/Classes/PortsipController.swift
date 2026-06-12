@@ -513,17 +513,24 @@ class PortsipController: NSObject {
             let callee = arguments["callee"] as? String ?? ""
             let sendSdp = arguments["sendSdp"] as? Bool ?? true
             let videoCall = arguments["videoCall"] as? Bool ?? false
+            // Additional conference legs pass false so the whole conference stays
+            // a single system call (one CallKit call).
+            let reportToConnectionService = arguments["reportToConnectionService"] as? Bool ?? true
+            let displayName = arguments["displayName"] as? String
 
             let sessionId = portSIPSDK.call(callee, sendSdp: sendSdp, videoCall: videoCall)
 
             // Only start audio and report to CallKit if call succeeded
             if sessionId > 0 {
                 portSIPSDK.startAudio(AVAudioSession.sharedInstance())
-                PortsipCallKitProvider.shared.reportOutgoingCall(
-                    sessionId: Int(sessionId),
-                    callee: callee,
-                    hasVideo: videoCall
-                )
+                if reportToConnectionService {
+                    PortsipCallKitProvider.shared.reportOutgoingCall(
+                        sessionId: Int(sessionId),
+                        callee: callee,
+                        hasVideo: videoCall,
+                        displayName: displayName
+                    )
+                }
             }
 
             return Int(sessionId)
@@ -536,17 +543,91 @@ class PortsipController: NSObject {
     /// - Returns: 0 on success, error code otherwise
     func hangUp(arguments: [String: Any]) -> Int {
         let sessionId = arguments["sessionId"] as? Int ?? -1
+        let reportToConnectionService = arguments["reportToConnectionService"] as? Bool ?? true
 
-        // If CallKit is enabled, route through CallKit delegate
-        if PortsipCallKitProvider.shared.isCallKitEnabled {
+        // The merged-conference primary's CXCall is transferred to a
+        // surviving leg instead of ended — the survivor has no CXCall of its
+        // own and would lose the audio session. End just the SIP session.
+        // For non-conference sessions this only prunes the tracking.
+        if PortsipCallKitProvider.shared.transferSystemCallIfNeeded(endingSessionId: sessionId) != nil {
+            return sdkQueue.sync { Int(portSIPSDK.hangUp(sessionId)) }
+        }
+
+        // Additional conference legs aren't registered with CallKit and share the
+        // conference audio session, so drop them directly without routing through
+        // CallKit (would target an unknown call) or stopping audio (would mute the
+        // rest of the conference).
+        if !reportToConnectionService {
+            return sdkQueue.sync { Int(portSIPSDK.hangUp(sessionId)) }
+        }
+
+        // Route through CallKit only if this session has a CallKit call;
+        // otherwise end directly (which also stops audio).
+        if PortsipCallKitProvider.shared.isCallKitEnabled,
+           PortsipCallKitProvider.shared.getUUID(for: sessionId) != nil {
             PortsipCallKitProvider.shared.requestEndCall(sessionId: sessionId)
             // CallKit path is asynchronous - return 0 as the request was submitted
             // Actual result will be delivered via onCallKitEndCall event
             return 0
         } else {
-            // CallKit disabled - perform action directly and return actual result
+            // CallKit disabled, or this session has no CallKit call - perform the
+            // action directly and return the actual result.
             return performEndCallAction(sessionId: sessionId)
         }
+    }
+
+    /// Creates an audio conference bridge. Sessions joined via [joinToConference]
+    /// are mixed together so all participants hear each other.
+    /// - Returns: conference id (>= 0) on success, error code otherwise
+    func createAudioConference() -> Int {
+        return sdkQueue.sync {
+            return Int(portSIPSDK.createAudioConference())
+        }
+    }
+
+    /// Sessions currently joined to the SDK audio-conference bridge. When
+    /// CallKit cycles the audio session (deactivate → reactivate), the
+    /// restarted audio engine does NOT re-wire conference mixing — re-joining
+    /// the members does (see [activateAudioSession]). Guarded by sdkQueue.
+    private var conferenceJoinedSessions: Set<Int> = []
+
+    /// Joins a session into the existing conference.
+    /// - Parameter arguments: Dictionary containing sessionId
+    /// - Returns: 0 on success, error code otherwise
+    func joinToConference(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            let result = Int(portSIPSDK.join(toConference: Int(sessionId)))
+            if result == 0 {
+                conferenceJoinedSessions.insert(sessionId)
+            }
+            return result
+        }
+    }
+
+    /// Removes a session from the existing conference.
+    /// - Parameter arguments: Dictionary containing sessionId
+    /// - Returns: 0 on success, error code otherwise
+    func removeFromConference(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            conferenceJoinedSessions.remove(sessionId)
+            return Int(portSIPSDK.remove(fromConference: Int(sessionId)))
+        }
+    }
+
+    /// Destroys the existing conference bridge. The SDK call returns void, so we
+    /// report success (0) once it's been invoked.
+    /// - Returns: 0
+    func destroyConference() -> Int {
+        sdkQueue.sync {
+            conferenceJoinedSessions.removeAll()
+            portSIPSDK.destroyConference()
+        }
+        // No bridge → no merged conference; a later session end must not try to
+        // transfer the CXCall to a leg that's no longer conferenced.
+        PortsipCallKitProvider.shared.clearConferenceTracking()
+        return 0
     }
 
     /// Puts a call on hold.
@@ -558,6 +639,13 @@ class PortsipController: NSObject {
             let sessionId = arguments["sessionId"] as? Int ?? -1
 
             let result = portSIPSDK.hold(Int(sessionId))
+            // Mirror the hold to CallKit so the system UI shows the call as held
+            // (and offers Swap when there's another call). No-ops for legs that
+            // aren't registered with CallKit.
+            if result == 0 {
+                PortsipCallKitProvider.shared.noteHoldState(sessionId: sessionId, onHold: true)
+                PortsipCallKitProvider.shared.reportCallHeld(sessionId: sessionId, onHold: true)
+            }
             return Int(result)
         }
     }
@@ -571,8 +659,73 @@ class PortsipController: NSObject {
             let sessionId = arguments["sessionId"] as? Int ?? -1
 
             let result = portSIPSDK.unHold(Int(sessionId))
+            // Mirror the resume to CallKit (see hold()).
+            if result == 0 {
+                PortsipCallKitProvider.shared.noteHoldState(sessionId: sessionId, onHold: false)
+                PortsipCallKitProvider.shared.reportCallHeld(sessionId: sessionId, onHold: false)
+            }
             return Int(result)
         }
+    }
+
+    /// Swaps which of two calls is on hold: SDK-holds one leg, SDK-resumes the
+    /// other, then mirrors BOTH to CallKit in one atomic CXTransaction (see
+    /// PortsipCallKitProvider.reportCallsSwapped — two separate transactions
+    /// make CallKit end one of the calls).
+    /// - Parameter arguments: Dictionary containing:
+    ///   - holdSessionId: The active leg to put on hold
+    ///   - unholdSessionId: The held leg to resume
+    /// - Returns: 0 on success, first failing SDK error code otherwise
+    func swapHold(arguments: [String: Any]) -> Int {
+        let holdSessionId = arguments["holdSessionId"] as? Int ?? -1
+        let unholdSessionId = arguments["unholdSessionId"] as? Int ?? -1
+        let result: Int32 = sdkQueue.sync {
+            let unholdResult = portSIPSDK.unHold(unholdSessionId)
+            let holdResult = portSIPSDK.hold(holdSessionId)
+            return unholdResult != 0 ? unholdResult : holdResult
+        }
+        if result == 0 {
+            PortsipCallKitProvider.shared.noteHoldState(sessionId: holdSessionId, onHold: true)
+            PortsipCallKitProvider.shared.noteHoldState(sessionId: unholdSessionId, onHold: false)
+            PortsipCallKitProvider.shared.reportCallsSwapped(
+                holdSessionId: holdSessionId,
+                unholdSessionId: unholdSessionId
+            )
+        }
+        return Int(result)
+    }
+
+    /// Collapses a merged conference to a single system call (see
+    /// PortsipCallKitProvider.reportConferenceMerged).
+    /// - Parameter arguments: Dictionary containing:
+    ///   - primarySessionId: The leg whose CallKit call represents the conference
+    ///   - mergedAwaySessionIds: The other legs whose CallKit calls to end
+    /// - Returns: 0
+    func reportConferenceMerged(arguments: [String: Any]) -> Int {
+        let primarySessionId = arguments["primarySessionId"] as? Int ?? -1
+        let mergedAway = (arguments["mergedAwaySessionIds"] as? [Any] ?? [])
+            .compactMap { ($0 as? NSNumber)?.intValue ?? ($0 as? Int) }
+        PortsipCallKitProvider.shared.reportConferenceMerged(
+            primarySessionId: primarySessionId,
+            mergedAwaySessionIds: mergedAway
+        )
+        return 0
+    }
+
+    /// Updates the display name the system call UI shows for a session
+    /// (e.g. a conference title after a merge).
+    /// - Parameter arguments: Dictionary containing:
+    ///   - sessionId: The session whose system call to relabel
+    ///   - displayName: The name to show
+    /// - Returns: 0
+    func updateOsCallDisplay(arguments: [String: Any]) -> Int {
+        let sessionId = arguments["sessionId"] as? Int ?? -1
+        let displayName = arguments["displayName"] as? String ?? ""
+        PortsipCallKitProvider.shared.updateCallDisplay(
+            sessionId: sessionId,
+            displayName: displayName
+        )
+        return 0
     }
 
     /// Mutes or unmutes audio/video streams for a call session.
@@ -680,17 +833,55 @@ class PortsipController: NSObject {
     /// - Parameters:
     ///   - sessionId: The session ID of the call
     ///   - onHold: Whether to hold or unhold the call
+    /// Sends the onCallKitHold event to Flutter. Called by the CXSetHeldCall
+    /// delegate before the SDK work so the two actions of one Swap reach
+    /// Flutter back-to-back.
+    func notifyCallKitHold(sessionId: Int, onHold: Bool) {
+        let eventData: [String: Any] = [
+            PortsipConstants.EventKeys.sessionId: sessionId,
+            PortsipConstants.EventKeys.onHold: onHold
+        ]
+        PortsipEventBridge.shared.sendEvent(name: "onCallKitHold", data: eventData)
+    }
+
+    /// Drives the SDK for a system-initiated hold. Flutter was already
+    /// notified optimistically by the delegate (see [notifyCallKitHold]); on
+    /// SDK failure the tracked state is reverted and a corrective event keeps
+    /// Flutter in sync.
     func handleCallKitHold(sessionId: Int, onHold: Bool) {
         let result = sdkQueue.sync {
             return onHold ? portSIPSDK.hold(sessionId) : portSIPSDK.unHold(sessionId)
         }
-        if result == 0 {
-            // Send event to Flutter
-            let eventData: [String: Any] = [
-                PortsipConstants.EventKeys.sessionId: sessionId,
-                PortsipConstants.EventKeys.onHold: onHold
-            ]
-            PortsipEventBridge.shared.sendEvent(name: "onCallKitHold", data: eventData)
+        if result != 0 {
+            PortsipLogger.e("Controller", "handleCallKitHold(\(sessionId), \(onHold)) SDK error \(result)")
+            PortsipCallKitProvider.shared.noteHoldState(sessionId: sessionId, onHold: !onHold)
+            notifyCallKitHold(sessionId: sessionId, onHold: !onHold)
+        }
+    }
+
+    /// Called when CallKit ACTIVATES the shared audio session. CallKit owns
+    /// session activation around hold / unhold / swap (the held call's session
+    /// is deactivated and reactivated), so the SDK audio engine must (re)start
+    /// here — otherwise the call goes silent after a hold/swap/merge even though
+    /// the SIP media is fine. Idempotent: starting already-running audio is a
+    /// no-op.
+    func activateAudioSession() {
+        sdkQueue.sync {
+            portSIPSDK.startAudio(AVAudioSession.sharedInstance())
+            // A restarted audio engine doesn't re-wire conference mixing —
+            // re-join any bridged sessions so the conference keeps audio.
+            for sessionId in conferenceJoinedSessions {
+                let rc = portSIPSDK.join(toConference: sessionId)
+                PortsipLogger.d("Controller", "audio reactivated: re-join \(sessionId) → \(rc)")
+            }
+        }
+    }
+
+    /// Called when CallKit DEACTIVATES the shared audio session (call held or
+    /// ended). Mirrors [activateAudioSession].
+    func deactivateAudioSession() {
+        sdkQueue.sync {
+            portSIPSDK.stopAudio(AVAudioSession.sharedInstance())
         }
     }
 
@@ -786,6 +977,7 @@ class PortsipController: NSObject {
     /// down CallKit — those are app-lifetime concerns.
     func unInitialize() {
         sdkQueue.sync {
+            conferenceJoinedSessions.removeAll()
             if let sdk = _portSIPSDK {
                 sdk.unRegisterServer(0)
                 sdk.unInitialize()
@@ -892,8 +1084,11 @@ extension PortsipController: PortSIPEventDelegate {
     }
 
     func onInviteFailure(_ sessionId: Int, callerDisplayName: String!, caller: String!, calleeDisplayName: String!, callee: String!, reason: String!, code: Int32, sipMessage: String!) {
-        // Report call ended to CallKit
-        PortsipCallKitProvider.shared.reportCallEnded(sessionId: sessionId, reason: .failed)
+        // A merged-conference primary's CXCall is transferred to a surviving
+        // leg instead of ended (see transferSystemCallIfNeeded).
+        if PortsipCallKitProvider.shared.transferSystemCallIfNeeded(endingSessionId: sessionId) == nil {
+            PortsipCallKitProvider.shared.reportCallEnded(sessionId: sessionId, reason: .failed)
+        }
 
         let eventData: [String: Any] = [
             PortsipConstants.EventKeys.sessionId: sessionId,
@@ -919,8 +1114,11 @@ extension PortsipController: PortSIPEventDelegate {
     }
 
     func onInviteClosed(_ sessionId: Int, sipMessage: String!) {
-        // Report call ended to CallKit
-        PortsipCallKitProvider.shared.reportCallEnded(sessionId: sessionId, reason: .remoteEnded)
+        // A merged-conference primary's CXCall is transferred to a surviving
+        // leg instead of ended (see transferSystemCallIfNeeded).
+        if PortsipCallKitProvider.shared.transferSystemCallIfNeeded(endingSessionId: sessionId) == nil {
+            PortsipCallKitProvider.shared.reportCallEnded(sessionId: sessionId, reason: .remoteEnded)
+        }
 
         let eventData: [String: Any] = [
             PortsipConstants.EventKeys.sessionId: sessionId,

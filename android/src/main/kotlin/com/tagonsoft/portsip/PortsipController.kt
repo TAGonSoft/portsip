@@ -401,16 +401,22 @@ class PortsipController private constructor() : OnPortSIPEvent {
         val callee = (arguments["callee"] as? String) ?: ""
         val sendSdp = (arguments["sendSdp"] as? Boolean) ?: true
         val videoCall = (arguments["videoCall"] as? Boolean) ?: false
+        // Additional conference legs pass false so the whole conference stays a
+        // single system call (one ConnectionService connection).
+        val reportToConnectionService =
+            (arguments["reportToConnectionService"] as? Boolean) ?: true
+        val displayName = arguments["displayName"] as? String
 
         val sessionId = portSipSdk?.call(callee, sendSdp, videoCall) ?: -1L
 
         // Report outgoing call to ConnectionService (Android's CallKit equivalent)
-        if (sessionId > 0 && context != null) {
+        if (sessionId > 0 && reportToConnectionService && context != null) {
             PortsipConnectionService.reportOutgoingCall(
                 context!!,
                 sessionId,
                 callee,
-                videoCall
+                videoCall,
+                displayName
             )
         }
 
@@ -426,8 +432,18 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun hangUp(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        // Additional conference legs pass false: they were never reported to the
+        // ConnectionService (the whole conference is one system call), so don't
+        // try to end a connection that isn't there.
+        val reportToConnectionService =
+            (arguments["reportToConnectionService"] as? Boolean) ?: true
         val result = portSipSdk?.hangUp(sessionId) ?: -1
-        if (sessionId >= 0L) {
+        // The merged-conference primary's Connection is transferred to a
+        // surviving leg instead of destroyed — the survivor has no Connection
+        // of its own and would lose the call audio route. For non-conference
+        // sessions this only prunes the tracking.
+        val adoptedBy = PortsipConnectionService.transferSystemCallIfNeeded(sessionId)
+        if (sessionId >= 0L && reportToConnectionService && adoptedBy == null) {
             PortsipConnectionService.reportCallEnded(
                 sessionId, android.telecom.DisconnectCause.LOCAL
             )
@@ -442,7 +458,15 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun hold(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
-        return portSipSdk?.hold(sessionId) ?: -1
+        val result = portSipSdk?.hold(sessionId) ?: -1
+        // Mirror the hold to ConnectionService so the system UI shows it as held
+        // (and offers Swap when there's another call). No-ops for legs not
+        // registered with the ConnectionService. setOnHold() does NOT re-enter
+        // Connection.onHold(), so there's no echo to guard against here.
+        if (result == 0) {
+            PortsipConnectionService.reportCallHeld(sessionId, true)
+        }
+        return result
     }
 
     /**
@@ -452,7 +476,106 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun unHold(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
-        return portSipSdk?.unHold(sessionId) ?: -1
+        val result = portSipSdk?.unHold(sessionId) ?: -1
+        // Mirror the resume to ConnectionService (see hold()).
+        if (result == 0) {
+            PortsipConnectionService.reportCallHeld(sessionId, false)
+        }
+        return result
+    }
+
+    /**
+     * Swaps which of two calls is on hold: SDK-holds one leg, SDK-resumes the
+     * other, and mirrors both to the ConnectionService. One channel call for
+     * cross-platform parity with iOS, where the CallKit mirror must be a
+     * single atomic transaction.
+     * @param arguments Map containing holdSessionId and unholdSessionId
+     * @return 0 on success, first failing SDK error code otherwise
+     */
+    fun swapHold(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val holdSessionId = (arguments["holdSessionId"] as? Number)?.toLong() ?: -1L
+        val unholdSessionId = (arguments["unholdSessionId"] as? Number)?.toLong() ?: -1L
+        val sdk = portSipSdk ?: return -1
+        val unholdResult = sdk.unHold(unholdSessionId)
+        val holdResult = sdk.hold(holdSessionId)
+        val result = if (unholdResult != 0) unholdResult else holdResult
+        if (result == 0) {
+            PortsipConnectionService.reportCallHeld(holdSessionId, true)
+            PortsipConnectionService.reportCallHeld(unholdSessionId, false)
+        }
+        return result
+    }
+
+    /**
+     * Collapses a merged conference to a single system call by ending the
+     * ConnectionService connections for the merged-away legs (their SIP sessions
+     * stay live in the SDK conference bridge).
+     * @param arguments Map containing primarySessionId and mergedAwaySessionIds
+     * @return 0
+     */
+    fun reportConferenceMerged(arguments: Map<String, Any?>): Int {
+        val mergedAway = (arguments["mergedAwaySessionIds"] as? List<*>)
+            ?.mapNotNull { (it as? Number)?.toLong() } ?: emptyList()
+        val primary = (arguments["primarySessionId"] as? Number)?.toLong() ?: -1L
+        PortsipConnectionService.reportConferenceMerged(primary, mergedAway)
+        return 0
+    }
+
+    /**
+     * Updates the display name the system call UI shows for a session — used
+     * after a merged conference collapses and the surviving leg adopted the
+     * system call (see PortsipConnectionService.transferSystemCallIfNeeded).
+     * @param arguments Map containing sessionId and displayName
+     * @return 0
+     */
+    fun updateOsCallDisplay(arguments: Map<String, Any?>): Int {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        val displayName = (arguments["displayName"] as? String) ?: ""
+        PortsipConnectionService.updateCallDisplay(sessionId, displayName)
+        return 0
+    }
+
+    /**
+     * Creates an audio conference bridge. Sessions joined via [joinToConference]
+     * are mixed together so all participants hear each other.
+     * @return conference id (>= 0) on success, error code otherwise
+     */
+    fun createAudioConference(): Int = synchronized(sdkLock) {
+        return portSipSdk?.createAudioConference() ?: -1
+    }
+
+    /**
+     * Joins a session into the existing conference.
+     * @param arguments Map containing sessionId
+     * @return 0 on success, error code otherwise
+     */
+    fun joinToConference(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        return portSipSdk?.joinToConference(sessionId) ?: -1
+    }
+
+    /**
+     * Removes a session from the existing conference.
+     * @param arguments Map containing sessionId
+     * @return 0 on success, error code otherwise
+     */
+    fun removeFromConference(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        return portSipSdk?.removeFromConference(sessionId) ?: -1
+    }
+
+    /**
+     * Destroys the existing conference bridge. The SDK call returns void, so we
+     * report success (0) once it's been invoked, or -1 if the SDK is gone.
+     * @return 0 on success, -1 if the SDK is not initialized
+     */
+    fun destroyConference(): Int = synchronized(sdkLock) {
+        val sdk = portSipSdk ?: return -1
+        sdk.destroyConference()
+        // No bridge → no merged conference; a later session end must not try to
+        // transfer the Connection to a leg that's no longer conferenced.
+        PortsipConnectionService.clearConferenceTracking()
+        return 0
     }
 
     /**
@@ -708,8 +831,11 @@ class PortsipController private constructor() : OnPortSIPEvent {
         code: Int,
         sipMessage: String?
     ) {
-        // Report call ended to ConnectionService with failure reason
-        PortsipConnectionService.reportCallEnded(sessionId, android.telecom.DisconnectCause.ERROR)
+        // A merged-conference primary's Connection is transferred to a
+        // surviving leg instead of ended (see transferSystemCallIfNeeded).
+        if (PortsipConnectionService.transferSystemCallIfNeeded(sessionId) == null) {
+            PortsipConnectionService.reportCallEnded(sessionId, android.telecom.DisconnectCause.ERROR)
+        }
 
         val eventData = mapOf(
             "sessionId" to sessionId,
@@ -733,8 +859,11 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     override fun onInviteClosed(sessionId: Long, sipMessage: String?) {
-        // Report call ended to ConnectionService
-        PortsipConnectionService.reportCallEnded(sessionId)
+        // A merged-conference primary's Connection is transferred to a
+        // surviving leg instead of ended (see transferSystemCallIfNeeded).
+        if (PortsipConnectionService.transferSystemCallIfNeeded(sessionId) == null) {
+            PortsipConnectionService.reportCallEnded(sessionId)
+        }
 
         val eventData = mapOf(
             "sessionId" to sessionId,

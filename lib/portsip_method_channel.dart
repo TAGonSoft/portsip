@@ -215,8 +215,16 @@ class MethodChannelPortsip extends PortsipPlatform {
     required String callee,
     required bool sendSdp,
     required bool videoCall,
+    bool reportToConnectionService = true,
+    String? displayName,
   }) async {
-    final args = {'callee': callee, 'sendSdp': sendSdp, 'videoCall': videoCall};
+    final args = {
+      'callee': callee,
+      'sendSdp': sendSdp,
+      'videoCall': videoCall,
+      'reportToConnectionService': reportToConnectionService,
+      if (displayName != null) 'displayName': displayName,
+    };
     _logCall('makeCall', args);
     try {
       // Use dynamic to handle both Long (Android) and Int (iOS)
@@ -239,8 +247,14 @@ class MethodChannelPortsip extends PortsipPlatform {
   ///
   /// Returns 0 on success, -1 or error code on failure.
   @override
-  Future<int> hangUp({required int sessionId}) async {
-    final args = {'sessionId': sessionId};
+  Future<int> hangUp({
+    required int sessionId,
+    bool reportToConnectionService = true,
+  }) async {
+    final args = {
+      'sessionId': sessionId,
+      'reportToConnectionService': reportToConnectionService,
+    };
     _logCall('hangUp', args);
     try {
       final result = await methodChannel.invokeMethod<int>('hangUp', args);
@@ -286,6 +300,166 @@ class MethodChannelPortsip extends PortsipPlatform {
       return result ?? -1;
     } on PlatformException catch (e) {
       _logError('unHold', e);
+      return -1;
+    }
+  }
+
+  /// Swaps which of two calls is on hold (atomic system-call mirror).
+  ///
+  /// Invokes the native 'swapHold' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> swapHold({
+    required int holdSessionId,
+    required int unholdSessionId,
+  }) async {
+    final args = {
+      'holdSessionId': holdSessionId,
+      'unholdSessionId': unholdSessionId,
+    };
+    _logCall('swapHold', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>('swapHold', args);
+      _logResponse('swapHold', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('swapHold', e);
+      return -1;
+    }
+  }
+
+  /// Creates an audio conference bridge.
+  ///
+  /// Invokes the native 'createAudioConference' method via MethodChannel.
+  ///
+  /// Returns the conference id (>= 0) on success, -1 or error code on failure.
+  @override
+  Future<int> createAudioConference() async {
+    _logCall('createAudioConference');
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'createAudioConference',
+      );
+      _logResponse('createAudioConference', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('createAudioConference', e);
+      return -1;
+    }
+  }
+
+  /// Joins a session into the existing conference.
+  ///
+  /// Invokes the native 'joinToConference' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> joinToConference({required int sessionId}) async {
+    final args = {'sessionId': sessionId};
+    _logCall('joinToConference', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'joinToConference',
+        args,
+      );
+      _logResponse('joinToConference', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('joinToConference', e);
+      return -1;
+    }
+  }
+
+  /// Removes a session from the existing conference.
+  ///
+  /// Invokes the native 'removeFromConference' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> removeFromConference({required int sessionId}) async {
+    final args = {'sessionId': sessionId};
+    _logCall('removeFromConference', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'removeFromConference',
+        args,
+      );
+      _logResponse('removeFromConference', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('removeFromConference', e);
+      return -1;
+    }
+  }
+
+  /// Destroys the existing conference bridge.
+  ///
+  /// Invokes the native 'destroyConference' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> destroyConference() async {
+    _logCall('destroyConference');
+    try {
+      final result = await methodChannel.invokeMethod<int>('destroyConference');
+      _logResponse('destroyConference', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('destroyConference', e);
+      return -1;
+    }
+  }
+
+  /// Collapses a merged conference to a single system call.
+  ///
+  /// Invokes the native 'reportConferenceMerged' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> reportConferenceMerged({
+    required int primarySessionId,
+    required List<int> mergedAwaySessionIds,
+  }) async {
+    final args = {
+      'primarySessionId': primarySessionId,
+      'mergedAwaySessionIds': mergedAwaySessionIds,
+    };
+    _logCall('reportConferenceMerged', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'reportConferenceMerged',
+        args,
+      );
+      _logResponse('reportConferenceMerged', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('reportConferenceMerged', e);
+      return -1;
+    }
+  }
+
+  /// Updates the display name the system call UI shows for a session.
+  ///
+  /// Invokes the native 'updateOsCallDisplay' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> updateOsCallDisplay({
+    required int sessionId,
+    required String displayName,
+  }) async {
+    final args = {'sessionId': sessionId, 'displayName': displayName};
+    _logCall('updateOsCallDisplay', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'updateOsCallDisplay',
+        args,
+      );
+      _logResponse('updateOsCallDisplay', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('updateOsCallDisplay', e);
       return -1;
     }
   }

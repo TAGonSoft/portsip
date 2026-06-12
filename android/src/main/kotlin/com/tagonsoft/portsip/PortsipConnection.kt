@@ -20,11 +20,21 @@ import android.telecom.DisconnectCause
  */
 class PortsipConnection(
     private val context: Context,
-    private val sessionId: Long
+    private var sessionId: Long
 ) : Connection() {
 
     companion object {
         private const val COMPONENT = "Connection"
+    }
+
+    /**
+     * The merged-conference primary ended but this Connection lives on as the
+     * surviving leg's system call — retarget the system-UI callbacks (end,
+     * hold, DTMF, …) at the surviving session.
+     */
+    fun adoptSession(newSessionId: Long) {
+        PortsipLogger.d(COMPONENT, "Connection adopting session $newSessionId (was $sessionId)")
+        sessionId = newSessionId
     }
 
     init {

@@ -236,6 +236,23 @@ class CallKitEndCallEvent extends PortsipEvent {
       : super('onCallKitEndCall', {'sessionId': sessionId});
 }
 
+/// Event emitted when the user taps Merge in the system call UI (iOS only —
+/// CallKit groups the two calls via CXSetGroupCallAction). The app should
+/// bridge the two sessions into an audio conference.
+class CallKitMergeEvent extends PortsipEvent {
+  /// The session ID the action targeted
+  final int sessionId;
+
+  /// The session ID of the call it was grouped with
+  final int otherSessionId;
+
+  CallKitMergeEvent(this.sessionId, this.otherSessionId)
+      : super('onCallKitMerge', {
+          'sessionId': sessionId,
+          'otherSessionId': otherSessionId,
+        });
+}
+
 /// Event emitted when CallKit fails to report an outgoing call (iOS only).
 class CallKitFailureEvent extends PortsipEvent {
   /// The session ID of the call
@@ -414,6 +431,11 @@ PortsipEvent toTypedEvent(PortsipEvent event) {
     case 'onCallKitEndCall':
       return CallKitEndCallEvent(
         event.data?['sessionId'] as int? ?? -1,
+      );
+    case 'onCallKitMerge':
+      return CallKitMergeEvent(
+        event.data?['sessionId'] as int? ?? -1,
+        event.data?['otherSessionId'] as int? ?? -1,
       );
     case 'onCallKitFailure':
       return CallKitFailureEvent(
