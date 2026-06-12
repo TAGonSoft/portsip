@@ -1,3 +1,31 @@
+## 0.0.9
+
+* **Feature**: Audio conferencing on both platforms. Adds `createAudioConference()`,
+`joinToConference({sessionId})`, `removeFromConference({sessionId})`, and
+`destroyConference()` to build and tear down a mixing bridge so all participants
+hear each other.
+* **Feature**: Expose `swapHold({holdSessionId, unholdSessionId})` — atomically
+holds one call and resumes another. Required on iOS, where the CallKit mirror
+must be a single transaction or CallKit's one-active-call enforcement can end a
+call when swapping with separate hold/unHold calls.
+* **Feature**: Expose `reportConferenceMerged({primarySessionId, mergedAwaySessionIds})`.
+Ends the CallKit / ConnectionService calls for merged-away legs (their SIP
+sessions stay live in the bridge) so the OS presents one call instead of several.
+* **Feature**: Expose `updateOsCallDisplay({sessionId, displayName})` to update
+the name the system call UI shows for a session — e.g. a conference title after
+a merge.
+* **Feature**: New `CallKitMergeEvent` (`onCallKitMerge`, iOS only) emitted when
+the user taps Merge in the system call UI (`CXSetGroupCallAction`), carrying both
+`sessionId` and `otherSessionId` so the app can bridge them into a conference.
+* **Feature**: `makeCall(...)` gains `reportToConnectionService` (default `true`)
+and `displayName`. Pass `reportToConnectionService: false` for additional
+conference legs to keep the whole conference as one system call; set `displayName`
+at call time since iOS doesn't reliably honor display updates after an outgoing
+call starts.
+* **Feature**: `hangUp(...)` gains `reportToConnectionService` (default `true`).
+Pass `false` to drop a single conference leg without ending the system call or
+tearing down the shared audio session.
+
 ## 0.0.8
 
 * **Feature**: Expose `refreshRegistration({int expires = 0})` on both
