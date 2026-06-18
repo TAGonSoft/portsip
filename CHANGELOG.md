@@ -1,3 +1,18 @@
+## 0.1.0
+
+* **BREAKING**: Conference merge no longer ends any call leg. The old
+"end the merged-away leg" model tore down the shared audio session and
+silenced participants on merge.
+* **Feature**: `requestCallGroup({sessionIds})` — group calls into one native
+conference in the system UI (iOS `CXSetGroupCallAction`; Android signals the
+host to build the SDK bridge). No call is ended; the host is notified via
+`onCallKitMerge` to build/confirm the audio bridge.
+* **Feature**: `endCallAndResume({endSessionId, resumeSessionId})` — ends one
+leg and resumes another atomically, keeping exactly one active system call so
+the audio session is never torn down. Prefer over separate `hangUp`/`unHold`.
+* **Deprecated**: `reportConferenceMerged(...)` — use `requestCallGroup`.
+Ending the merged-away leg tears down the audio session.
+
 ## 0.0.9
 
 * **Feature**: Audio conferencing on both platforms. Adds `createAudioConference()`,
