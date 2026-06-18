@@ -37,6 +37,9 @@ enum PortsipMethodCall: String {
     /// Swaps which of two calls is on hold (atomic CallKit mirror)
     case swapHold = "swapHold"
 
+    /// Ends one leg and resumes another atomically (keeps CallKit's active call)
+    case endCallAndResume = "endCallAndResume"
+
     /// Creates an audio conference bridge
     case createAudioConference = "createAudioConference"
 
@@ -49,7 +52,10 @@ enum PortsipMethodCall: String {
     /// Destroys the existing conference bridge
     case destroyConference = "destroyConference"
 
-    /// Collapses a merged conference to a single system call
+    /// Groups sessions into one native conference call (CXSetGroupCallAction)
+    case requestCallGroup = "requestCallGroup"
+
+    /// Collapses a merged conference to a single system call (legacy)
     case reportConferenceMerged = "reportConferenceMerged"
 
     /// Updates the display name the system call UI shows for a session

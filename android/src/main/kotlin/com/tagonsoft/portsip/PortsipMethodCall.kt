@@ -41,6 +41,12 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Swaps which of two calls is on hold */
     SWAP_HOLD("swapHold"),
 
+    /** Ends one leg and resumes another atomically */
+    END_CALL_AND_RESUME("endCallAndResume"),
+
+    /** Groups sessions into one native conference call */
+    REQUEST_CALL_GROUP("requestCallGroup"),
+
     /** Creates an audio conference bridge */
     CREATE_AUDIO_CONFERENCE("createAudioConference"),
 
