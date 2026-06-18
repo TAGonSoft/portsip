@@ -130,6 +130,12 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.destroyConference()
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "destroyConference", resultValue)
             result(resultValue)
+        case .requestCallGroup:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "requestCallGroup", arguments)
+            let resultValue = PortsipController.shared.requestCallGroup(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "requestCallGroup", resultValue)
+            result(resultValue)
         case .reportConferenceMerged:
             let arguments = call.arguments as? [String: Any] ?? [:]
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "reportConferenceMerged", arguments)
@@ -141,6 +147,12 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "swapHold", arguments)
             let resultValue = PortsipController.shared.swapHold(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "swapHold", resultValue)
+            result(resultValue)
+        case .endCallAndResume:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "endCallAndResume", arguments)
+            let resultValue = PortsipController.shared.endCallAndResume(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "endCallAndResume", resultValue)
             result(resultValue)
         case .updateOsCallDisplay:
             let arguments = call.arguments as? [String: Any] ?? [:]

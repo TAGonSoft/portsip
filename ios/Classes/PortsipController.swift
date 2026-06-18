@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import PortSIPVoIPSDK
 
 /// DTMF (Dual-Tone Multi-Frequency) codes for dial pad tones.
@@ -679,11 +680,13 @@ class PortsipController: NSObject {
     func swapHold(arguments: [String: Any]) -> Int {
         let holdSessionId = arguments["holdSessionId"] as? Int ?? -1
         let unholdSessionId = arguments["unholdSessionId"] as? Int ?? -1
+        PortsipLogger.d("Controller", "swapHold BEGIN hold=\(holdSessionId) unhold=\(unholdSessionId)")
         let result: Int32 = sdkQueue.sync {
             let unholdResult = portSIPSDK.unHold(unholdSessionId)
             let holdResult = portSIPSDK.hold(holdSessionId)
             return unholdResult != 0 ? unholdResult : holdResult
         }
+        PortsipLogger.d("Controller", "swapHold END result=\(result)")
         if result == 0 {
             PortsipCallKitProvider.shared.noteHoldState(sessionId: holdSessionId, onHold: true)
             PortsipCallKitProvider.shared.noteHoldState(sessionId: unholdSessionId, onHold: false)
@@ -695,8 +698,44 @@ class PortsipController: NSObject {
         return Int(result)
     }
 
-    /// Collapses a merged conference to a single system call (see
-    /// PortsipCallKitProvider.reportConferenceMerged).
+    /// Ends one leg and resumes another atomically (see
+    /// PortsipCallKitProvider.endCallAndResume). With CallKit the delegates drive
+    /// the SDK; without it, drive the SDK directly.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - endSessionId: The leg to hang up
+    ///   - resumeSessionId: The held leg to resume
+    /// - Returns: 0
+    func endCallAndResume(arguments: [String: Any]) -> Int {
+        let endSessionId = arguments["endSessionId"] as? Int ?? -1
+        let resumeSessionId = arguments["resumeSessionId"] as? Int ?? -1
+        if PortsipCallKitProvider.shared.isCallKitEnabled {
+            PortsipCallKitProvider.shared.endCallAndResume(
+                endSessionId: endSessionId,
+                resumeSessionId: resumeSessionId
+            )
+        } else {
+            sdkQueue.sync {
+                _ = portSIPSDK.hangUp(endSessionId)
+                _ = portSIPSDK.unHold(resumeSessionId)
+            }
+        }
+        return 0
+    }
+
+    /// Groups sessions into one native conference call via CallKit (see
+    /// PortsipCallKitProvider.requestCallGroup). No call is ended.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - sessionIds: The sessions to group into one conference call
+    /// - Returns: 0 on submit, -1 on failure
+    func requestCallGroup(arguments: [String: Any]) -> Int {
+        let sessionIds = (arguments["sessionIds"] as? [Any] ?? [])
+            .compactMap { ($0 as? NSNumber)?.intValue ?? ($0 as? Int) }
+        return PortsipCallKitProvider.shared.requestCallGroup(sessionIds: sessionIds)
+    }
+
+    /// Collapses a merged conference to a single system call (legacy; see
+    /// PortsipCallKitProvider.reportConferenceMerged). Superseded by
+    /// requestCallGroup — kept for API compatibility.
     /// - Parameter arguments: Dictionary containing:
     ///   - primarySessionId: The leg whose CallKit call represents the conference
     ///   - mergedAwaySessionIds: The other legs whose CallKit calls to end
@@ -764,10 +803,23 @@ class PortsipController: NSObject {
             portSIPSDK.setLoudspeakerStatus(enable)
         }
 
+        // Remember the intent so it survives a CallKit session reactivation
+        // (hold/swap/merge resets the route to the receiver).
+        PortsipCallKitProvider.shared.setDesiredSpeaker(enable)
+
         // If CallKit is disabled, perform action directly
         // When CallKit is enabled, the audio route change notification handles this
         if !PortsipCallKitProvider.shared.isCallKitEnabled {
             performSpeakerAction(sessionId: sessionId, enableSpeaker: enable)
+        }
+    }
+
+    /// Re-applies the loudspeaker through the SDK after a hold/swap resume drops
+    /// the output to the receiver. Uses the SDK path (not an AVAudioSession
+    /// override) so it sticks the same way the initial speaker-on does.
+    func reassertLoudspeaker() {
+        sdkQueue.sync {
+            portSIPSDK.setLoudspeakerStatus(true)
         }
     }
 
@@ -815,8 +867,15 @@ class PortsipController: NSObject {
         }
 
         if result == 0 {
-            sdkQueue.sync {
-                portSIPSDK.stopAudio(AVAudioSession.sharedInstance())
+            // Only tear down the audio engine when this was the last call. When
+            // another call survives (e.g. ending the active leg with a held leg
+            // taking over), stopping here silences the survivor — it keeps using
+            // the session. sessionCount still includes this leg (removed by the
+            // CXEndCallAction handler after we return).
+            if PortsipCallKitProvider.shared.sessionCount <= 1 {
+                sdkQueue.sync {
+                    portSIPSDK.stopAudio(AVAudioSession.sharedInstance())
+                }
             }
             // Send event to Flutter
             let eventData: [String: Any] = [
@@ -868,11 +927,19 @@ class PortsipController: NSObject {
     func activateAudioSession() {
         sdkQueue.sync {
             portSIPSDK.startAudio(AVAudioSession.sharedInstance())
-            // A restarted audio engine doesn't re-wire conference mixing —
-            // re-join any bridged sessions so the conference keeps audio.
-            for sessionId in conferenceJoinedSessions {
-                let rc = portSIPSDK.join(toConference: sessionId)
-                PortsipLogger.d("Controller", "audio reactivated: re-join \(sessionId) → \(rc)")
+            // A conference bridge doesn't survive an audio-engine restart, and
+            // re-joining sessions into the old bridge attaches them to a dead
+            // mixer (joins return 0 but audio stays silent). Rebuild the
+            // bridge from scratch and re-join the members — the same sequence
+            // as a fresh merge.
+            if !conferenceJoinedSessions.isEmpty {
+                portSIPSDK.destroyConference()
+                let confResult = portSIPSDK.createAudioConference()
+                PortsipLogger.d("Controller", "audio reactivated: conference rebuilt → \(confResult)")
+                for sessionId in conferenceJoinedSessions {
+                    let rc = portSIPSDK.join(toConference: sessionId)
+                    PortsipLogger.d("Controller", "audio reactivated: re-join \(sessionId) → \(rc)")
+                }
             }
         }
     }
@@ -941,12 +1008,19 @@ class PortsipController: NSObject {
             // Send each digit
             for char in digits {
                 if let digit = getDTMFCode(for: char) {
+                    // Local keypad feedback: play the system DTMF tone (sound IDs
+                    // 1200–1211), which follows the active output route including
+                    // the loudspeaker override. The SDK's own playDtmfTone is left
+                    // OFF — it only reaches the speaker after an audio-engine
+                    // restart (e.g. a merge), so it's silent on speaker in a plain
+                    // call and would double up once a conference exists.
+                    AudioServicesPlaySystemSound(SystemSoundID(1200 + Int(digit)))
                     _ = portSIPSDK.sendDtmf(
                         sessionId,
                         dtmfMethod: DTMF_RFC2833,
                         code: digit,
                         dtmfDration: 160,
-                        playDtmfTone: true
+                        playDtmfTone: false
                     )
                 }
             }
@@ -1106,6 +1180,11 @@ extension PortsipController: PortSIPEventDelegate {
     func onInviteConnected(_ sessionId: Int) {
         // Report call connected to CallKit (for outgoing calls)
         PortsipCallKitProvider.shared.reportCallConnected(sessionId: sessionId)
+
+        // A newly connected leg negotiates media and the SDK drops the route to
+        // the receiver — open the window so the loudspeaker is re-asserted (adding
+        // a call rings longer than the swap window, so this is its own trigger).
+        PortsipCallKitProvider.shared.beginAudioReconfiguration()
 
         let eventData: [String: Any] = [
             PortsipConstants.EventKeys.sessionId: sessionId

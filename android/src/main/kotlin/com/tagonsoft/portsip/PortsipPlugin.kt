@@ -151,6 +151,22 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.END_CALL_AND_RESUME -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "endCallAndResume", arguments)
+                    val resultValue = PortsipController.shared.endCallAndResume(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "endCallAndResume", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.REQUEST_CALL_GROUP -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "requestCallGroup", arguments)
+                    val resultValue = PortsipController.shared.requestCallGroup(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "requestCallGroup", resultValue)
+                    result.success(resultValue)
+                }
+
                 PortsipMethodCall.CREATE_AUDIO_CONFERENCE -> {
                     PortsipLogger.logCall(COMPONENT, "createAudioConference")
                     val resultValue = PortsipController.shared.createAudioConference()

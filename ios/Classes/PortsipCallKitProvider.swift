@@ -66,6 +66,22 @@ class PortsipCallKitProvider: NSObject {
     /// Tracks the last known speaker state to prevent duplicate events
     private var lastSpeakerState: Bool?
 
+    /// The user's intended loudspeaker state. Set by explicit speaker control and
+    /// by genuine output overrides made OUTSIDE a hold/swap reconfiguration. Used
+    /// to re-assert the route after a resume, where the SDK otherwise drops it to
+    /// the receiver. Kept separate from lastSpeakerState so it survives the
+    /// transient route changes a hold transition produces.
+    private var desiredSpeakerOn = false
+
+    /// True while a hold/swap/merge is reconfiguring audio. During this window the
+    /// SDK resets the output to the receiver on resume; we re-assert the speaker
+    /// instead of mistaking that reset for the user turning speaker off.
+    private var audioReconfiguring = false
+
+    /// Bumped each time the reconfiguration window (re)opens so a stale close
+    /// scheduled by an earlier transition doesn't shut a later one early.
+    private var reconfigGeneration = 0
+
     /// Prevents recursive audio route change handling
     private var isHandlingRouteChange = false
 
@@ -144,12 +160,49 @@ class PortsipCallKitProvider: NSObject {
             lastSpeakerState = enabled
         }
     }
+
+    /// Records the user's intended loudspeaker state (see desiredSpeakerOn).
+    func setDesiredSpeaker(_ on: Bool) {
+        sessionLock.sync {
+            desiredSpeakerOn = on
+        }
+    }
+
+    /// Opens the audio-reconfiguration window (see audioReconfiguring). Called at
+    /// every hold/unhold/swap/connect so the route resets the SDK makes while
+    /// renegotiating media are re-asserted rather than read as user intent.
+    /// Auto-closes after the reconfiguration settles.
+    ///
+    /// Re-assertion only ever acts when desiredSpeakerOn is set, and that intent
+    /// is cleared at the start of each new call group, so opening the window on a
+    /// plain single call is harmless (nothing to re-assert until the user picks
+    /// the speaker).
+    func beginAudioReconfiguration() {
+        let gen: Int = sessionLock.sync {
+            audioReconfiguring = true
+            reconfigGeneration += 1
+            return reconfigGeneration
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            guard let self = self else { return }
+            self.sessionLock.sync {
+                if self.reconfigGeneration == gen {
+                    self.audioReconfiguring = false
+                }
+            }
+        }
+    }
     
     // MARK: - Thread-Safe Session Management
 
     /// Thread-safe setter for session-to-UUID mapping
     private func setUUID(_ uuid: UUID, for sessionId: Int) {
         sessionLock.sync {
+            // First call of a new group → start with the loudspeaker intent clear
+            // so it never leaks from a previous, unrelated call.
+            if sessionToUUID.isEmpty {
+                desiredSpeakerOn = false
+            }
             sessionToUUID[sessionId] = uuid
         }
     }
@@ -161,6 +214,11 @@ class PortsipCallKitProvider: NSObject {
             programmaticHoldCounts.removeValue(forKey: sessionId)
             sessionHoldStates.removeValue(forKey: sessionId)
             pendingDisplayNames.removeValue(forKey: sessionId)
+            // Last call gone — drop the speaker intent so the next call starts
+            // on the receiver rather than inheriting this one's loudspeaker.
+            if sessionToUUID.isEmpty {
+                desiredSpeakerOn = false
+            }
         }
     }
 
@@ -195,6 +253,9 @@ class PortsipCallKitProvider: NSObject {
         sessionLock.sync {
             sessionHoldStates[sessionId] = onHold
         }
+        // A hold/unhold/swap is about to renegotiate audio — open the window so
+        // the SDK's route reset on resume is re-asserted, not taken as intent.
+        beginAudioReconfiguration()
     }
 
     /// The last hold state applied to the SDK for [sessionId], or nil if its
@@ -236,6 +297,11 @@ class PortsipCallKitProvider: NSObject {
         }
     }
 
+    /// Number of calls currently tracked by CallKit.
+    var sessionCount: Int {
+        return sessionLock.sync { sessionToUUID.count }
+    }
+
     /// Thread-safe removal of all sessions
     private func removeAllSessions() {
         sessionLock.sync {
@@ -245,6 +311,7 @@ class PortsipCallKitProvider: NSObject {
             pendingDisplayNames.removeAll()
             conferencePrimarySession = nil
             conferenceMergedAwaySessions.removeAll()
+            desiredSpeakerOn = false
         }
     }
 
@@ -418,6 +485,74 @@ class PortsipCallKitProvider: NSObject {
                 )
             }
         }
+    }
+
+    /// Ends [endSessionId] and resumes [resumeSessionId] in ONE atomic
+    /// CXTransaction. Ending the active leg and resuming the held leg as two
+    /// separate steps leaves CallKit with zero active calls in between — it tears
+    /// down the audio session and the survivor comes back silent. Bundling both
+    /// keeps exactly one active call throughout. The CXAction delegates drive the
+    /// SDK hangUp/unHold, so callers must NOT also invoke them directly.
+    func endCallAndResume(endSessionId: Int, resumeSessionId: Int) {
+        guard isCallKitEnabled,
+              let endUUID = getUUIDThreadSafe(for: endSessionId),
+              let resumeUUID = getUUIDThreadSafe(for: resumeSessionId) else { return }
+
+        PortsipLogger.d(
+            PortsipCallKitProvider.COMPONENT,
+            "endCallAndResume end=\(endSessionId) resume=\(resumeSessionId) (atomic)"
+        )
+
+        let transaction = CXTransaction(actions: [
+            CXEndCallAction(call: endUUID),
+            CXSetHeldCallAction(call: resumeUUID, onHold: false),
+        ])
+
+        // Resuming the survivor renegotiates its media and the SDK drops the route
+        // to the receiver — open the window so the loudspeaker is re-asserted.
+        beginAudioReconfiguration()
+
+        callController.request(transaction) { error in
+            if let error = error {
+                PortsipLogger.e(
+                    PortsipCallKitProvider.COMPONENT,
+                    "endCallAndResume failed (end \(endSessionId) / resume \(resumeSessionId)): \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    /// Groups [sessionIds] into one native CallKit conference call via a single
+    /// CXSetGroupCallAction transaction (the first session is the anchor; every
+    /// other is grouped onto it). No call is ended, so CallKit keeps the audio
+    /// session active — the delegate confirms it and notifies Flutter via
+    /// onCallKitMerge, which is also where the system Merge button lands.
+    func requestCallGroup(sessionIds: [Int]) -> Int {
+        guard isCallKitEnabled, sessionIds.count >= 2 else { return -1 }
+        let uuids = sessionIds.compactMap { getUUIDThreadSafe(for: $0) }
+        guard uuids.count == sessionIds.count, let anchor = uuids.first else {
+            PortsipLogger.e(
+                PortsipCallKitProvider.COMPONENT,
+                "requestCallGroup: missing CXCall UUID for one of \(sessionIds)"
+            )
+            return -1
+        }
+        let actions = uuids.dropFirst().map {
+            CXSetGroupCallAction(call: $0, callUUIDToGroupWith: anchor)
+        }
+        PortsipLogger.d(
+            PortsipCallKitProvider.COMPONENT,
+            "requestCallGroup grouping \(sessionIds) onto anchor=\(sessionIds.first ?? -1)"
+        )
+        callController.request(CXTransaction(actions: Array(actions))) { error in
+            if let error = error {
+                PortsipLogger.e(
+                    PortsipCallKitProvider.COMPONENT,
+                    "requestCallGroup failed: \(error.localizedDescription)"
+                )
+            }
+        }
+        return 0
     }
 
     /// Collapses a now-merged conference to a single system call: ends the
@@ -625,6 +760,10 @@ extension PortsipCallKitProvider: CXProviderDelegate {
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
         PortsipLogger.d(PortsipCallKitProvider.COMPONENT, "audio session ACTIVATED → startAudio")
         PortsipController.shared.activateAudioSession()
+        // Reactivation precedes the SDK's route reset on resume — keep the
+        // reconfiguration window open so the reset is re-asserted (the actual
+        // re-assert happens in handleAudioRouteChange once the route settles).
+        beginAudioReconfiguration()
     }
 
     /// Called when CallKit deactivates the shared audio session (held / ended).
@@ -772,7 +911,7 @@ extension PortsipCallKitProvider: CXProviderDelegate {
 
         guard let userInfo = notification.userInfo,
               let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let _ = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
             return
         }
 
@@ -782,6 +921,35 @@ extension PortsipCallKitProvider: CXProviderDelegate {
         // Check speaker state for ANY route change (not just override/categoryChange)
         // This ensures we catch all speaker button taps
         let isSpeakerActive = currentRoute.outputs.first?.portType == .builtInSpeaker
+
+        let (wantSpeaker, reconfiguring) = sessionLock.sync { (desiredSpeakerOn, audioReconfiguring) }
+        PortsipLogger.d(
+            PortsipCallKitProvider.COMPONENT,
+            "routeChange reason=\(getRouteChangeReasonName(reason)) " +
+            "output=\(currentRoute.outputs.first?.portType.rawValue ?? "none") " +
+            "isSpeaker=\(isSpeakerActive) desiredSpeaker=\(wantSpeaker) reconfig=\(reconfiguring)"
+        )
+
+        // Outside a hold/swap reconfiguration, an explicit output override is the
+        // user choosing speaker/earpiece (in-app or CallKit button) — record the
+        // intent. During reconfiguration the same .override is the SDK resetting
+        // the route on resume, so it must NOT clobber the intent.
+        if reason == .override && !reconfiguring {
+            setDesiredSpeaker(isSpeakerActive)
+        }
+
+        // During reconfiguration the SDK drops the resumed leg to the receiver.
+        // If the user wants the loudspeaker and there's no external output, re-assert
+        // it through the SDK — the same path that turns speaker on at call start.
+        if reconfiguring && wantSpeaker && !isSpeakerActive {
+            let hasExternalOutput = currentRoute.outputs.contains {
+                $0.portType != .builtInReceiver && $0.portType != .builtInSpeaker
+            }
+            if !hasExternalOutput {
+                PortsipLogger.d(PortsipCallKitProvider.COMPONENT, "re-asserting speaker during reconfiguration")
+                PortsipController.shared.reassertLoudspeaker()
+            }
+        }
 
         // Thread-safe check and update of lastSpeakerState to prevent duplicate events / loops
         let shouldNotify = sessionLock.sync { () -> Bool in

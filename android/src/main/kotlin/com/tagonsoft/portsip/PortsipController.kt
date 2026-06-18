@@ -507,9 +507,49 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     /**
+     * Ends one leg and resumes another. Telecom keeps the resumed leg active, so
+     * there's no zero-active-call audio teardown to coordinate around as on iOS;
+     * driving the SDK hangUp/unHold and mirroring the resume is sufficient.
+     */
+    fun endCallAndResume(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val endSessionId = (arguments["endSessionId"] as? Number)?.toLong() ?: -1L
+        val resumeSessionId = (arguments["resumeSessionId"] as? Number)?.toLong() ?: -1L
+        val sdk = portSipSdk ?: return -1
+        sdk.hangUp(endSessionId)
+        val unholdResult = sdk.unHold(resumeSessionId)
+        if (unholdResult == 0) {
+            PortsipConnectionService.reportCallHeld(resumeSessionId, false)
+        }
+        return 0
+    }
+
+    /**
+     * Groups sessions into one conference. Telecom has no CXSetGroupCallAction
+     * equivalent, so this re-emits onCallKitMerge (sessionId, otherSessionId) and
+     * lets the Dart layer build the SDK audio conference — the same convergence
+     * point used on iOS, keeping the cross-platform flow identical.
+     * @param arguments Map containing sessionIds
+     * @return 0 on submit, -1 if fewer than two sessions
+     */
+    fun requestCallGroup(arguments: Map<String, Any?>): Int {
+        val ids = (arguments["sessionIds"] as? List<*>)
+            ?.mapNotNull { (it as? Number)?.toInt() } ?: emptyList()
+        if (ids.size < 2) return -1
+        PortsipEventBridge.shared.sendEvent(
+            "onCallKitMerge",
+            mapOf(
+                PortsipConstants.EventKeys.SESSION_ID to ids[1],
+                "otherSessionId" to ids[0],
+            )
+        )
+        return 0
+    }
+
+    /**
      * Collapses a merged conference to a single system call by ending the
      * ConnectionService connections for the merged-away legs (their SIP sessions
-     * stay live in the SDK conference bridge).
+     * stay live in the SDK conference bridge). Legacy — superseded by
+     * requestCallGroup; kept for API compatibility.
      * @param arguments Map containing primarySessionId and mergedAwaySessionIds
      * @return 0
      */

@@ -329,6 +329,32 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Ends one leg and resumes another atomically (keeps one active system call).
+  ///
+  /// Invokes the native 'endCallAndResume' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> endCallAndResume({
+    required int endSessionId,
+    required int resumeSessionId,
+  }) async {
+    final args = {
+      'endSessionId': endSessionId,
+      'resumeSessionId': resumeSessionId,
+    };
+    _logCall('endCallAndResume', args);
+    try {
+      final result =
+          await methodChannel.invokeMethod<int>('endCallAndResume', args);
+      _logResponse('endCallAndResume', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('endCallAndResume', e);
+      return -1;
+    }
+  }
+
   /// Creates an audio conference bridge.
   ///
   /// Invokes the native 'createAudioConference' method via MethodChannel.
@@ -411,11 +437,34 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Groups the given sessions into one native conference call.
+  ///
+  /// Invokes the native 'requestCallGroup' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> requestCallGroup({required List<int> sessionIds}) async {
+    final args = {'sessionIds': sessionIds};
+    _logCall('requestCallGroup', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'requestCallGroup',
+        args,
+      );
+      _logResponse('requestCallGroup', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('requestCallGroup', e);
+      return -1;
+    }
+  }
+
   /// Collapses a merged conference to a single system call.
   ///
   /// Invokes the native 'reportConferenceMerged' method via MethodChannel.
   ///
   /// Returns 0 on success, -1 or error code on failure.
+  @Deprecated('Use requestCallGroup for native call grouping.')
   @override
   Future<int> reportConferenceMerged({
     required int primarySessionId,

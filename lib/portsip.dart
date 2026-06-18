@@ -376,6 +376,23 @@ class Portsip {
     );
   }
 
+  /// Ends [endSessionId] and resumes [resumeSessionId] in one atomic
+  /// transaction, keeping exactly one active call in the system call UI.
+  ///
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> endCallAndResume({
+    required int endSessionId,
+    required int resumeSessionId,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.endCallAndResume(
+      endSessionId: endSessionId,
+      resumeSessionId: resumeSessionId,
+    );
+  }
+
   /// Create an audio conference bridge. Sessions joined via [joinToConference]
   /// are mixed together so all participants hear each other.
   ///
@@ -424,6 +441,19 @@ class Portsip {
     return await PortsipPlatform.instance.destroyConference();
   }
 
+  /// Groups [sessionIds] into one native conference call in the system call UI.
+  /// No call is ended; listen on `onCallKitMerge` to build the audio bridge.
+  ///
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> requestCallGroup({required List<int> sessionIds}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.requestCallGroup(
+      sessionIds: sessionIds,
+    );
+  }
+
   /// Collapse a merged conference to a SINGLE system call: ends the CallKit /
   /// ConnectionService calls for the merged-away legs (their SIP sessions stay
   /// live in the conference bridge) so the OS shows one call instead of several.
@@ -434,6 +464,10 @@ class Portsip {
   /// Returns 0 if successful.
   ///
   /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  @Deprecated(
+    'Use requestCallGroup for native call grouping; ending the merged-away '
+    'call tears down the audio session.',
+  )
   Future<int> reportConferenceMerged({
     required int primarySessionId,
     required List<int> mergedAwaySessionIds,

@@ -187,6 +187,17 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('swapHold has not been implemented.');
   }
 
+  /// Ends [endSessionId] and resumes [resumeSessionId] atomically, keeping
+  /// exactly one active call in the system call UI.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> endCallAndResume({
+    required int endSessionId,
+    required int resumeSessionId,
+  }) async {
+    throw UnimplementedError('endCallAndResume has not been implemented.');
+  }
+
   /// Creates an audio conference bridge. Joined sessions are mixed together.
   ///
   /// Returns the conference id (>= 0) on success, negative error code on failure.
@@ -216,10 +227,23 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('destroyConference has not been implemented.');
   }
 
+  /// Groups the given sessions into one native conference call in the system
+  /// call UI. No call is ended; the onCallKitMerge event signals the host to
+  /// build the audio bridge.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> requestCallGroup({required List<int> sessionIds}) async {
+    throw UnimplementedError('requestCallGroup has not been implemented.');
+  }
+
   /// Collapses a merged conference to a single system call by ending the
   /// CallKit / ConnectionService calls for the merged-away legs.
   ///
   /// Returns 0 on success, negative error code on failure.
+  @Deprecated(
+    'Use requestCallGroup for native call grouping; ending the merged-away '
+    'call tears down the audio session.',
+  )
   Future<int> reportConferenceMerged({
     required int primarySessionId,
     required List<int> mergedAwaySessionIds,
