@@ -139,6 +139,7 @@ class PortsipConnection(
      */
     override fun onCallAudioStateChanged(state: CallAudioState?) {
         state?.let {
+          try {
             PortsipLogger.d(COMPONENT, "onCallAudioStateChanged for session $sessionId: muted=${it.isMuted}, route=${it.route}")
 
             // Handle mute state change
@@ -152,18 +153,65 @@ class PortsipConnection(
                 )
             )
 
-            // Handle audio route change (speaker)
-            val isSpeaker = it.route == CallAudioState.ROUTE_SPEAKER
-            PortsipController.shared.performSpeakerAction(sessionId, isSpeaker)
+            // Audio route change. Telecom owns the route; the SDK follows.
+            val route = it.route
+            val want = PortsipConnectionService.getDesiredRoute()
+            val reconfiguring = PortsipConnectionService.isAudioReconfiguring()
+            val wantReachable = (it.supportedRouteMask and want) != 0
 
+            // During a resume Telecom drops the route to the earpiece. If that's not
+            // what the user picked, re-assert their route instead of accepting the
+            // reset — this is what preserves speaker/BT across hold/swap/merge.
+            if (reconfiguring && route != want && wantReachable) {
+                PortsipLogger.d(COMPONENT, "re-asserting route $want during reconfiguration")
+                PortsipConnectionService.applyAudioRoute(want)
+                // Report the route we're restoring so the UI doesn't flash the
+                // transient earpiece; the real onCallAudioStateChanged that follows
+                // applyAudioRoute will confirm it.
+                emitRouteForReassert(want, it)
+                return@let
+            }
+
+            // A genuine route change (user picked in-app or via the system UI):
+            // record it as the desired route and tell the SDK to follow speaker/
+            // earpiece (BT/headset are followed by the SDK's AppRTC manager).
+            if (!reconfiguring) {
+                PortsipConnectionService.setDesiredRoute(route)
+            }
+            // Physically apply the route via setCommunicationDevice — works for USB
+            // headsets and forces the speaker even with a headset plugged in (AppRTC
+            // refused both). Single physical router for all outputs.
+            PortsipConnectionService.routeToDevice(context, route)
             PortsipEventBridge.shared.sendEvent(
-                "onConnectionServiceSpeaker",
-                mapOf(
-                    PortsipConstants.EventKeys.SESSION_ID to sessionId,
-                    PortsipConstants.EventKeys.ENABLED to isSpeaker
-                )
+                "onConnectionServiceAudioRoute",
+                mapOf(PortsipConstants.EventKeys.SESSION_ID to sessionId) +
+                    PortsipConnectionService.routeStateMap(it)
             )
+          } catch (e: Throwable) {
+            // Never let route handling crash the call (esp. release builds).
+            PortsipLogger.e(COMPONENT, "onCallAudioStateChanged failed: $e")
+          }
         }
+    }
+
+    /** Emits the route state with [route] forced as current (used while we
+     *  re-assert it during a reconfiguration, before Telecom confirms). */
+    private fun emitRouteForReassert(route: Int, state: CallAudioState) {
+        val base = PortsipConnectionService.routeStateMap(state).toMutableMap()
+        @Suppress("UNCHECKED_CAST")
+        val ports = base["availablePorts"] as? List<Map<String, Any>> ?: emptyList()
+        val wantKind = when (route) {
+            CallAudioState.ROUTE_SPEAKER -> "builtInSpeaker"
+            CallAudioState.ROUTE_BLUETOOTH -> "bluetooth"
+            CallAudioState.ROUTE_WIRED_HEADSET -> "headphones"
+            else -> "builtInReceiver"
+        }
+        val current = ports.firstOrNull { it["kind"] == wantKind }
+        if (current != null) base["currentPort"] = current
+        PortsipEventBridge.shared.sendEvent(
+            "onConnectionServiceAudioRoute",
+            mapOf(PortsipConstants.EventKeys.SESSION_ID to sessionId) + base
+        )
     }
 
     /**

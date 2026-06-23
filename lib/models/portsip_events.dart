@@ -341,6 +341,30 @@ class ConnectionServiceSpeakerEvent extends PortsipEvent {
         });
 }
 
+/// Event emitted when the call's audio route changes via Telecom's
+/// ConnectionService (Android only) — the single source of truth for the
+/// available outputs and the currently selected one.
+class ConnectionServiceAudioRouteEvent extends PortsipEvent {
+  /// The session ID of the call
+  final int sessionId;
+
+  /// Raw available output ports ({uid, name, kind}).
+  final List<dynamic> availablePorts;
+
+  /// Raw currently selected output port ({uid, name, kind}), if any.
+  final Map<dynamic, dynamic>? currentPort;
+
+  ConnectionServiceAudioRouteEvent(
+    this.sessionId,
+    this.availablePorts,
+    this.currentPort,
+  ) : super('onConnectionServiceAudioRoute', {
+          'sessionId': sessionId,
+          'availablePorts': availablePorts,
+          'currentPort': currentPort,
+        });
+}
+
 /// Event emitted when the user sends DTMF via ConnectionService (Android only).
 class ConnectionServiceDTMFEvent extends PortsipEvent {
   /// The session ID of the call
@@ -487,6 +511,12 @@ PortsipEvent toTypedEvent(PortsipEvent event) {
       return ConnectionServiceSpeakerEvent(
         event.data?['sessionId'] as int? ?? -1,
         event.data?['enableSpeaker'] as bool? ?? false,
+      );
+    case 'onConnectionServiceAudioRoute':
+      return ConnectionServiceAudioRouteEvent(
+        event.data?['sessionId'] as int? ?? -1,
+        (event.data?['availablePorts'] as List<dynamic>?) ?? const [],
+        event.data?['currentPort'] as Map<dynamic, dynamic>?,
       );
     case 'onConnectionServiceDTMF':
       return ConnectionServiceDTMFEvent(

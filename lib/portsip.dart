@@ -540,6 +540,17 @@ class Portsip {
     return await PortsipPlatform.instance.setLoudspeakerStatus(enable: enable);
   }
 
+  /// Routes the current call's audio to a specific output (Android, Telecom-owned).
+  ///
+  /// [kind] - one of: builtInReceiver, builtInSpeaker, bluetooth, headphones.
+  /// Returns 0 if successful.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> setAudioRoute({required String kind}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.setAudioRoute(kind: kind);
+  }
+
   /// Send DTMF tone
   ///
   /// [sessionId] - The session ID

@@ -294,6 +294,15 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('setLoudspeakerStatus has not been implemented.');
   }
 
+  /// Routes the current call's audio to a specific output (Android, Telecom-owned).
+  ///
+  /// - [kind]: builtInReceiver | builtInSpeaker | bluetooth | headphones
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> setAudioRoute({required String kind}) async {
+    throw UnimplementedError('setAudioRoute has not been implemented.');
+  }
+
   /// Sends a DTMF (Dual-Tone Multi-Frequency) tone during a call.
   ///
   /// Parameters:

@@ -2,10 +2,14 @@ package com.tagonsoft.portsip
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.telecom.CallAudioState
 import android.telecom.Connection
 import android.telecom.ConnectionRequest
 import android.telecom.ConnectionService
@@ -298,6 +302,9 @@ class PortsipConnectionService : ConnectionService() {
                     connection.setDisconnected(DisconnectCause(reason))
                     connection.destroy()
                     sessionToConnection.remove(sessionId)
+                    // No calls left → forget the route intent so the next call
+                    // starts on the earpiece.
+                    if (sessionToConnection.isEmpty()) desiredRoute = ROUTE_EARPIECE
                     PortsipLogger.d(COMPONENT, "Call ended for session $sessionId with reason $reason")
                 }
             }
@@ -432,6 +439,141 @@ class PortsipConnectionService : ConnectionService() {
             lastSpeakerState = enabled
         }
 
+        // --- Telecom is the single owner of Android audio routing -------------
+        // The self-managed Connection owns the route (earpiece/speaker/BT/headset).
+        // Resuming a leg (swap/merge/unhold) makes Telecom reset to the earpiece and
+        // fire onCallAudioStateChanged(EARPIECE); mirroring that blindly would drop
+        // the route the user picked. So we track the user's intended route and, during
+        // the reconfiguration window those ops open, re-assert it through Telecom.
+
+        val ROUTE_EARPIECE = CallAudioState.ROUTE_EARPIECE
+        val ROUTE_SPEAKER = CallAudioState.ROUTE_SPEAKER
+        val ROUTE_BLUETOOTH = CallAudioState.ROUTE_BLUETOOTH
+        val ROUTE_WIRED_HEADSET = CallAudioState.ROUTE_WIRED_HEADSET
+
+        /** The user's intended audio route (a CallAudioState.ROUTE_* value). */
+        @Volatile
+        private var desiredRoute = CallAudioState.ROUTE_EARPIECE
+
+        /** True while a hold/swap/merge/connect is renegotiating audio. */
+        @Volatile
+        private var audioReconfiguring = false
+
+        /** Invalidates a stale reconfiguration-window auto-close. */
+        @Volatile
+        private var reconfigGeneration = 0
+
+        private val mainHandler = Handler(Looper.getMainLooper())
+
+        fun getDesiredRoute(): Int = desiredRoute
+        fun isAudioReconfiguring(): Boolean = audioReconfiguring
+
+        /** Records the user's intended audio route. */
+        fun setDesiredRoute(route: Int) {
+            desiredRoute = route
+        }
+
+        /**
+         * Opens the audio-reconfiguration window. Called at every hold/unhold/
+         * swap/merge/connect so the route Telecom resets while renegotiating media
+         * is re-asserted rather than read as the user picking the earpiece.
+         * Auto-closes ~2.5s later. Harmless on a plain call.
+         */
+        fun beginAudioReconfiguration() {
+            audioReconfiguring = true
+            val gen = ++reconfigGeneration
+            mainHandler.postDelayed({
+                if (reconfigGeneration == gen) audioReconfiguring = false
+            }, 2500L)
+        }
+
+        /**
+         * Routes the active call's audio to [route] (a CallAudioState.ROUTE_*)
+         * through Telecom, the single owner. Also records it as the desired route
+         * so it survives a subsequent reconfiguration. No-ops without a live call.
+         */
+        fun applyAudioRoute(route: Int): Boolean {
+            if (!isEnabled) return false
+            synchronized(connectionLock) {
+                val connection = sessionToConnection.values.firstOrNull {
+                    it.state == Connection.STATE_ACTIVE
+                } ?: sessionToConnection.values.firstOrNull() ?: return false
+                desiredRoute = route
+                connection.setAudioRoute(route)
+                PortsipLogger.d(COMPONENT, "applyAudioRoute($route) via Telecom")
+                return true
+            }
+        }
+
+        /**
+         * Physically applies an audio route via AudioManager.setCommunicationDevice
+         * (API 31+) — the modern call that works for every output, including USB
+         * headsets and forcing the speaker while a headset is plugged in (both of
+         * which the SDK's AppRTC won't do). This is the single physical router; we
+         * don't lean on the SDK's setAudioDevice (it refused speaker-with-headset).
+         */
+        fun routeToDevice(context: Context, route: Int) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            val types = when (route) {
+                ROUTE_SPEAKER -> intArrayOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+                ROUTE_EARPIECE -> intArrayOf(AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
+                ROUTE_BLUETOOTH -> intArrayOf(
+                    AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                    AudioDeviceInfo.TYPE_BLE_HEADSET,
+                )
+                else -> intArrayOf( // wired / USB headset
+                    AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                    AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                    AudioDeviceInfo.TYPE_USB_HEADSET,
+                )
+            }
+            val device = am.availableCommunicationDevices.firstOrNull { it.type in types }
+            if (device == null) {
+                PortsipLogger.w(COMPONENT, "routeToDevice($route): no device for route")
+                return
+            }
+            // Skip if already the active device. Telecom re-emits the audio state
+            // repeatedly while a route is held; re-applying setCommunicationDevice on
+            // an already-current device tears down and re-establishes the link — for
+            // Bluetooth SCO that means the audio cuts out every couple of seconds.
+            if (am.communicationDevice?.type == device.type) {
+                PortsipLogger.d(COMPONENT, "routeToDevice($route): already on ${device.type}, skipping")
+                return
+            }
+            val ok = am.setCommunicationDevice(device)
+            PortsipLogger.d(COMPONENT, "routeToDevice($route): setCommunicationDevice(${device.type}) -> $ok")
+        }
+
+        /**
+         * Builds the {availablePorts, currentPort} map the Flutter audio-route
+         * picker expects, from a Telecom CallAudioState. Generic names — Telecom
+         * doesn't carry a wired-headset name and the BT name needs runtime
+         * permissions, so the picker shows the route type.
+         */
+        fun routeStateMap(state: CallAudioState): Map<String, Any> {
+            fun port(route: Int): Map<String, Any> = when (route) {
+                ROUTE_SPEAKER -> mapOf("uid" to "route:speaker", "name" to "Speaker", "kind" to "builtInSpeaker")
+                ROUTE_BLUETOOTH -> mapOf("uid" to "route:bluetooth", "name" to "Bluetooth", "kind" to "bluetooth")
+                ROUTE_WIRED_HEADSET -> mapOf("uid" to "route:headset", "name" to "Headphones", "kind" to "headphones")
+                else -> mapOf("uid" to "route:earpiece", "name" to "Phone", "kind" to "builtInReceiver")
+            }
+            val mask = state.supportedRouteMask
+            val ports = mutableListOf<Map<String, Any>>()
+            // A wired headset replaces the earpiece (Android drops EARPIECE from the
+            // mask while one is plugged) — show the headset in its place; Speaker
+            // (and BT) stay selectable, and routeToDevice forces them even with the
+            // headset connected.
+            if (mask and ROUTE_WIRED_HEADSET != 0) {
+                ports.add(port(ROUTE_WIRED_HEADSET))
+            } else if (mask and ROUTE_EARPIECE != 0) {
+                ports.add(port(ROUTE_EARPIECE))
+            }
+            if (mask and ROUTE_BLUETOOTH != 0) ports.add(port(ROUTE_BLUETOOTH))
+            if (mask and ROUTE_SPEAKER != 0) ports.add(port(ROUTE_SPEAKER))
+            return mapOf("availablePorts" to ports, "currentPort" to port(state.route))
+        }
+
         /**
          * Gets the session ID for a given connection.
          *
@@ -468,6 +610,8 @@ class PortsipConnectionService : ConnectionService() {
                 phoneAccountHandle = null
             }
             lastSpeakerState = null
+            desiredRoute = ROUTE_EARPIECE
+            audioReconfiguring = false
             instance = null
             PortsipLogger.d(COMPONENT, "ConnectionService disposed")
         }

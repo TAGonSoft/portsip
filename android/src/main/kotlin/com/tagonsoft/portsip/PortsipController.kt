@@ -465,6 +465,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
         // Connection.onHold(), so there's no echo to guard against here.
         if (result == 0) {
             PortsipConnectionService.reportCallHeld(sessionId, true)
+            PortsipConnectionService.beginAudioReconfiguration()
         }
         return result
     }
@@ -489,6 +490,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
         // Mirror the resume to ConnectionService (see hold()).
         if (result == 0) {
             PortsipConnectionService.reportCallHeld(sessionId, false)
+            PortsipConnectionService.beginAudioReconfiguration()
         }
         return result
     }
@@ -511,6 +513,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
         if (result == 0) {
             PortsipConnectionService.reportCallHeld(holdSessionId, true)
             PortsipConnectionService.reportCallHeld(unholdSessionId, false)
+            PortsipConnectionService.beginAudioReconfiguration()
         }
         return result
     }
@@ -600,7 +603,11 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun joinToConference(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
-        return portSipSdk?.joinToConference(sessionId) ?: -1
+        val result = portSipSdk?.joinToConference(sessionId) ?: -1
+        // Building the conference renegotiates audio and drops the route to the
+        // earpiece — open the window so the loudspeaker is re-asserted, not lost.
+        if (result == 0) PortsipConnectionService.beginAudioReconfiguration()
+        return result
     }
 
     /**
@@ -652,15 +659,41 @@ class PortsipController private constructor() : OnPortSIPEvent {
      * Enables or disables the loudspeaker (speakerphone).
      * @param arguments Map containing enable flag
      */
-    fun setLoudspeakerStatus(arguments: Map<String, Any?>) = synchronized(sdkLock) {
+    fun setLoudspeakerStatus(arguments: Map<String, Any?>) {
         val enable = (arguments["enable"] as? Boolean) ?: false
-        val audioDevice = if (enable) {
-            PortSipEnumDefine.AudioDevice.SPEAKER_PHONE
+        val route = if (enable) {
+            PortsipConnectionService.ROUTE_SPEAKER
         } else {
-            PortSipEnumDefine.AudioDevice.EARPIECE
+            PortsipConnectionService.ROUTE_EARPIECE
         }
-        portSipSdk?.setAudioDevice(audioDevice)
+        // Telecom owns the route — drive it there (single owner). Only fall back to
+        // the SDK device switch when there's no system call to route through.
+        if (!PortsipConnectionService.applyAudioRoute(route)) {
+            synchronized(sdkLock) {
+                portSipSdk?.setAudioDevice(
+                    if (enable) PortSipEnumDefine.AudioDevice.SPEAKER_PHONE
+                    else PortSipEnumDefine.AudioDevice.EARPIECE
+                )
+            }
+        }
         PortsipLogger.d(COMPONENT, "Loudspeaker ${if (enable) "enabled" else "disabled"}")
+    }
+
+    /**
+     * Routes the active call's audio to a specific output through Telecom.
+     * @param arguments Map containing kind: builtInReceiver | builtInSpeaker |
+     *   bluetooth | headphones
+     */
+    fun setAudioRoute(arguments: Map<String, Any?>) {
+        val kind = (arguments["kind"] as? String) ?: "builtInReceiver"
+        val route = when (kind) {
+            "builtInSpeaker" -> PortsipConnectionService.ROUTE_SPEAKER
+            "bluetooth" -> PortsipConnectionService.ROUTE_BLUETOOTH
+            "headphones", "carAudio" -> PortsipConnectionService.ROUTE_WIRED_HEADSET
+            else -> PortsipConnectionService.ROUTE_EARPIECE
+        }
+        PortsipConnectionService.applyAudioRoute(route)
+        PortsipLogger.d(COMPONENT, "setAudioRoute($kind -> $route)")
     }
 
     /**
@@ -902,6 +935,10 @@ class PortsipController private constructor() : OnPortSIPEvent {
     override fun onInviteConnected(sessionId: Long) {
         // Report call connected to ConnectionService
         PortsipConnectionService.reportCallConnected(sessionId)
+        // A newly connected leg negotiates media and the SDK drops the route to
+        // the earpiece — open the window so the loudspeaker is re-asserted (adding
+        // a call rings longer than a swap, so this is its own trigger).
+        PortsipConnectionService.beginAudioReconfiguration()
 
         val eventData = mapOf("sessionId" to sessionId)
         PortsipEventBridge.shared.sendEvent("onInviteConnected", eventData)

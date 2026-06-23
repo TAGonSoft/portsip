@@ -229,6 +229,14 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(null)
                 }
 
+                PortsipMethodCall.SET_AUDIO_ROUTE -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "setAudioRoute", arguments)
+                    PortsipController.shared.setAudioRoute(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "setAudioRoute", "done")
+                    result.success(null)
+                }
+
                 PortsipMethodCall.SEND_DTMF -> {
                     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
                     PortsipLogger.logCall(COMPONENT, "sendDtmf", arguments)
