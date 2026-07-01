@@ -237,6 +237,14 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.GET_STATISTICS -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "getStatistics", arguments)
+                    val resultValue = PortsipController.shared.getStatistics(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "getStatistics", resultValue)
+                    result.success(resultValue)
+                }
+
                 PortsipMethodCall.SET_LICENSE_KEY -> {
                     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
                     PortsipLogger.logCall(COMPONENT, "setLicenseKey", arguments)

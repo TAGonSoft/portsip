@@ -586,6 +586,17 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('updateCall has not been implemented.');
   }
 
+  /// Requests RTP media statistics for [sessionId]. The result is delivered
+  /// asynchronously through the events stream as an `onStatistics` event whose
+  /// `stat` field is a JSON string of the channel statistics (bytes, packets,
+  /// jitter, loss). Call periodically (e.g. once per second) to track data
+  /// usage of an ongoing call.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> getStatistics({required int sessionId}) async {
+    throw UnimplementedError('getStatistics has not been implemented.');
+  }
+
   /// Tears down the native SDK so a different user can be loaded via
   /// [initialize] + [register] again, without shutting down the plugin.
   ///

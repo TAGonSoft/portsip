@@ -906,6 +906,23 @@ class Portsip {
     );
   }
 
+  /// Request RTP media statistics for a session.
+  ///
+  /// The statistics are delivered asynchronously on the [events] / [typedEvents]
+  /// stream as an `onStatistics` ([StatisticsEvent]) carrying a JSON `stat`
+  /// string with byte/packet/jitter/loss counters. Call this periodically (e.g.
+  /// once per second) while a call is up to track its data usage.
+  ///
+  /// [sessionId] - The session ID of the call to inspect.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> getStatistics({required int sessionId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.getStatistics(sessionId: sessionId);
+  }
+
   /// Unregister from the SIP server
   ///
   /// This method unregisters from the SIP server without releasing SDK resources.

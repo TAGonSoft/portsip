@@ -651,6 +651,17 @@ class PortsipController: NSObject {
         }
     }
 
+    /// Requests RTP statistics for a session. The SDK delivers the result
+    /// asynchronously via the onStatistics delegate, which forwards it to Flutter.
+    /// - Parameter arguments: Dictionary containing the sessionId.
+    /// - Returns: 0 on success, error code otherwise.
+    func getStatistics(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            return Int(portSIPSDK.getStatistics(Int(sessionId)))
+        }
+    }
+
     /// Resumes a call that was on hold.
     /// - Parameter arguments: Dictionary containing:
     ///   - sessionId: The session ID of the call to unhold
@@ -1259,7 +1270,13 @@ extension PortsipController: PortSIPEventDelegate {
     func onSubscriptionFailure(_ subscribeId: Int, statusCode: Int32) {}
     func onSubscriptionTerminated(_ subscribeId: Int) {}
     func onPlayFileFinished(_ sessionId: Int, fileName: String!) {}
-    func onStatistics(_ sessionId: Int, stat: String!) {}
+    func onStatistics(_ sessionId: Int, stat: String!) {
+        let eventData: [String: Any] = [
+            PortsipConstants.EventKeys.sessionId: sessionId,
+            PortsipConstants.EventKeys.stat: stat ?? ""
+        ]
+        PortsipEventBridge.shared.sendEvent(name: "onStatistics", data: eventData)
+    }
     func onRTPPacketCallback(_ sessionId: Int, mediaType: Int32, direction: DIRECTION_MODE, rtpPacket: UnsafeMutablePointer<UInt8>!, packetSize: Int32) {}
     func onAudioRawCallback(_ sessionId: Int, audioCallbackMode: Int32, data: UnsafeMutablePointer<UInt8>!, dataLength: Int32, samplingFreqHz: Int32) {}
     func onVideoRawCallback(_ sessionId: Int, videoCallbackMode: Int32, width: Int32, height: Int32, data: UnsafeMutablePointer<UInt8>!, dataLength: Int32) -> Int32 { return 0 }

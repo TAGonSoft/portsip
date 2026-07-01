@@ -470,6 +470,15 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     /**
+     * Requests RTP statistics for a session. The SDK delivers the result
+     * asynchronously via the onStatistics callback, which forwards it to Flutter.
+     */
+    fun getStatistics(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        return portSipSdk?.getStatistics(sessionId) ?: -1
+    }
+
+    /**
      * Resumes a call that was on hold.
      * @param arguments Map containing sessionId
      * @return 0 on success, error code otherwise
@@ -969,7 +978,13 @@ class PortsipController private constructor() : OnPortSIPEvent {
     override fun onSubscriptionFailure(subscribeId: Long, statusCode: Int) {}
     override fun onSubscriptionTerminated(subscribeId: Long) {}
     override fun onPlayFileFinished(sessionId: Long, fileName: String?) {}
-    override fun onStatistics(sessionId: Long, stat: String?) {}
+    override fun onStatistics(sessionId: Long, stat: String?) {
+        val eventData = mapOf(
+            "sessionId" to sessionId,
+            "stat" to (stat ?: "")
+        )
+        PortsipEventBridge.shared.sendEvent("onStatistics", eventData)
+    }
     override fun onAudioDeviceChanged(audioDevice: PortSipEnumDefine.AudioDevice?, deviceSet: MutableSet<PortSipEnumDefine.AudioDevice>?) {}
     override fun onAudioFocusChange(focusState: Int) {}
     override fun onRTPPacketCallback(sessionId: Long, mediaType: Int, direction: Int, rtpPacket: ByteArray?, packetSize: Int) {}

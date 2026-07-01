@@ -125,6 +125,24 @@ class InviteFailureEvent extends PortsipEvent {
 }
 
 // =============================================================================
+// Media Statistics Events
+// =============================================================================
+
+/// Event emitted in response to `getStatistics`, carrying RTP media statistics
+/// for a session as a JSON string (bytes/packets/jitter/loss). Used to track
+/// the data usage of an ongoing call.
+class StatisticsEvent extends PortsipEvent {
+  /// The session ID of the call.
+  final int sessionId;
+
+  /// RTP statistics as a JSON string, as delivered by the native SDK.
+  final String stat;
+
+  StatisticsEvent(this.sessionId, this.stat)
+      : super('onStatistics', {'sessionId': sessionId, 'stat': stat});
+}
+
+// =============================================================================
 // Remote State Events
 // =============================================================================
 
@@ -391,6 +409,13 @@ PortsipEvent toTypedEvent(PortsipEvent event) {
         event.data?['sessionId'] as int? ?? -1,
         event.data?['reason'] as String? ?? '',
         event.data?['code'] as int? ?? 0,
+      );
+
+    // Media statistics events
+    case 'onStatistics':
+      return StatisticsEvent(
+        event.data?['sessionId'] as int? ?? -1,
+        event.data?['stat'] as String? ?? '',
       );
 
     // Remote state events

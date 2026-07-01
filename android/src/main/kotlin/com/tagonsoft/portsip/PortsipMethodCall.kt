@@ -74,6 +74,9 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Sends DTMF tones during an active call */
     SEND_DTMF("sendDtmf"),
 
+    /** Requests RTP media statistics for a session (result via onStatistics event) */
+    GET_STATISTICS("getStatistics"),
+
     /** Sets the PortSIP license key */
     SET_LICENSE_KEY("setLicenseKey"),
 
