@@ -1,3 +1,11 @@
+## 0.1.1
+
+* **Feature**: `getStatistics({sessionId})` — requests RTP media statistics for
+a session. Results are delivered asynchronously on the events stream as an
+`onStatistics` ([StatisticsEvent]) carrying a JSON `stat` string with
+byte/packet/jitter/loss counters. Poll periodically (e.g. once per second) to
+track the live data usage of an ongoing call. Wired on both iOS and Android.
+
 ## 0.1.0
 
 * **BREAKING**: Conference merge no longer ends any call leg. The old
