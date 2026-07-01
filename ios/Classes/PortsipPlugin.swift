@@ -178,6 +178,12 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.sendDtmf(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "sendDtmf", resultValue)
             result(resultValue)
+        case .getStatistics:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "getStatistics", arguments)
+            let resultValue = PortsipController.shared.getStatistics(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "getStatistics", resultValue)
+            result(resultValue)
         case .configureCallKit:
             let arguments = call.arguments as? [String: Any] ?? [:]
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "configureCallKit", arguments)

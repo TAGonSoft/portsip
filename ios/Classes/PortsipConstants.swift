@@ -62,6 +62,9 @@ enum PortsipConstants {
 
         /// Key for failure code
         static let code = "code"
+
+        /// Key for RTP statistics JSON string
+        static let stat = "stat"
     }
 
     /// Argument keys used when receiving method calls from Flutter.

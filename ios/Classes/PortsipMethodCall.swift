@@ -69,7 +69,10 @@ enum PortsipMethodCall: String {
 
     /// Sends DTMF tones during an active call
     case sendDtmf = "sendDtmf"
-    
+
+    /// Requests RTP media statistics for a session (result via onStatistics event)
+    case getStatistics = "getStatistics"
+
     // MARK: - CallKit Methods
     
     /// Configures CallKit provider with app name and settings

@@ -1020,6 +1020,29 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Requests RTP statistics for a session; the result arrives as an
+  /// `onStatistics` event on the events stream.
+  ///
+  /// Invokes the native 'getStatistics' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> getStatistics({required int sessionId}) async {
+    final args = {'sessionId': sessionId};
+    _logCall('getStatistics', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'getStatistics',
+        args,
+      );
+      _logResponse('getStatistics', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('getStatistics', e);
+      return -1;
+    }
+  }
+
   /// Tears down the native SDK while keeping the plugin (and its event
   /// stream) alive. Used to swap SIP users at runtime.
   @override
