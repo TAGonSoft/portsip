@@ -1,3 +1,42 @@
+## 0.2.0
+
+* **Feature (Android)**: Telecom-owned audio routing. The self-managed
+`Connection` is the single owner of the call audio route. Adds
+`setAudioRoute({kind})` (`builtInReceiver | builtInSpeaker | bluetooth |
+headphones`) and the `onConnectionServiceAudioRoute`
+([ConnectionServiceAudioRouteEvent]) event carrying `availablePorts` and
+`currentPort` built from Telecom's `CallAudioState`, so a route picker can be
+driven entirely from plugin events. `setLoudspeakerStatus` now routes through
+Telecom as well. The user's chosen route is re-asserted across hold, unhold,
+swap, conference join and end-and-resume (Telecom resets to the earpiece while
+media renegotiates). Routes are physically applied via
+`AudioManager.setCommunicationDevice` (API 31+), which also supports USB
+headsets and forcing the speaker while a headset is plugged in. When using
+Telecom routing, call `enableAudioManager(enable: false)` — the SDK's built-in
+audio manager competes with Telecom and resets the route to earpiece on every
+new call leg.
+* **Fix (Android)**: `endCallAndResume` destroys the ended leg's Telecom
+`Connection` (previously left a phantom system call that could swallow
+audio-route changes) and preserves the user's audio route across the resume.
+* **Fix (Android)**: audio-route changes never target a disconnected
+`Connection`.
+* **Fix (Android)**: while the SDK audio conference is up, Telecom hold
+requests (its one-active-call juggling between the legs' Connections) are no
+longer forwarded to the SDK — SDK-holding a joined leg turns it sendonly,
+breaks that leg's conference audio and starves the mixer
+(`popConferenceAudioData failed` log floods).
+* **Fix (Android)**: Bluetooth audio no longer drops seconds after connecting.
+The plugin never issues `setCommunicationDevice` for Bluetooth anymore —
+Telecom's BluetoothRouteManager owns the SCO/BLE link, and pinning an app
+request over it (or leaving a stale speaker/earpiece request behind) yanked
+audio off the headset when the policy re-evaluated. Switching to Bluetooth now
+withdraws the plugin's outstanding request instead; built-in/wired outputs
+still route via `setCommunicationDevice` (with a brief retry while a
+just-connected headset isn't listed yet), and the request is cleared when the
+last call ends.
+* **Fix**: `setAudioRoute` returns -1 on platforms where it isn't implemented
+(iOS) instead of throwing `MissingPluginException`.
+
 ## 0.1.1
 
 * **Feature**: `getStatistics({sessionId})` — requests RTP media statistics for

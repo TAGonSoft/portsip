@@ -303,8 +303,12 @@ class PortsipConnectionService : ConnectionService() {
                     connection.destroy()
                     sessionToConnection.remove(sessionId)
                     // No calls left → forget the route intent so the next call
-                    // starts on the earpiece.
-                    if (sessionToConnection.isEmpty()) desiredRoute = ROUTE_EARPIECE
+                    // starts on the earpiece, and withdraw our communication-device
+                    // request so it can't pin the next call's audio.
+                    if (sessionToConnection.isEmpty()) {
+                        desiredRoute = ROUTE_EARPIECE
+                        clearCommDeviceRequest(null)
+                    }
                     PortsipLogger.d(COMPONENT, "Call ended for session $sessionId with reason $reason")
                 }
             }
@@ -495,13 +499,27 @@ class PortsipConnectionService : ConnectionService() {
         fun applyAudioRoute(route: Int): Boolean {
             if (!isEnabled) return false
             synchronized(connectionLock) {
-                val connection = sessionToConnection.values.firstOrNull {
+                // Never target a disconnected Connection — Telecom ignores route
+                // requests on dead calls, silently dropping the change.
+                val live = sessionToConnection.values.filter {
+                    it.state != Connection.STATE_DISCONNECTED
+                }
+                val connection = live.firstOrNull {
                     it.state == Connection.STATE_ACTIVE
-                } ?: sessionToConnection.values.firstOrNull() ?: return false
+                } ?: live.firstOrNull() ?: return false
                 desiredRoute = route
                 connection.setAudioRoute(route)
                 PortsipLogger.d(COMPONENT, "applyAudioRoute($route) via Telecom")
                 return true
+            }
+        }
+
+        /** True while at least one Connection is still alive. */
+        private fun hasLiveConnection(): Boolean {
+            synchronized(connectionLock) {
+                return sessionToConnection.values.any {
+                    it.state != Connection.STATE_DISCONNECTED
+                }
             }
         }
 
@@ -513,15 +531,37 @@ class PortsipConnectionService : ConnectionService() {
          * don't lean on the SDK's setAudioDevice (it refused speaker-with-headset).
          */
         fun routeToDevice(context: Context, route: Int) {
+            // A new request invalidates any retries still pending for an old one.
+            val gen = ++routeToDeviceGeneration
+            routeToDeviceAttempt(context, route, attempt = 0, gen = gen)
+        }
+
+        /** Cancels pending [routeToDeviceAttempt] retries when a newer route arrives. */
+        @Volatile
+        private var routeToDeviceGeneration = 0
+
+        /** The device type of this app's outstanding setCommunicationDevice request,
+         *  or null when none. The audio policy keeps a client's request active until
+         *  it is replaced or cleared — leaving a stale one (e.g. speaker) pinned
+         *  yanks audio off a route the system moved to (e.g. Bluetooth) moments
+         *  after it connects. */
+        @Volatile
+        private var requestedCommDeviceType: Int? = null
+
+        private fun routeToDeviceAttempt(context: Context, route: Int, attempt: Int, gen: Int) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
             val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            // Telecom's BluetoothRouteManager owns the SCO/BLE link. Pinning our own
+            // communication-device request on top of it fights the Bluetooth stack
+            // (audio drops when the link renegotiates), so for Bluetooth just drop
+            // any request we hold and let the active SCO link carry the call.
+            if (route == ROUTE_BLUETOOTH) {
+                clearCommDeviceRequest(am)
+                return
+            }
             val types = when (route) {
                 ROUTE_SPEAKER -> intArrayOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
                 ROUTE_EARPIECE -> intArrayOf(AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
-                ROUTE_BLUETOOTH -> intArrayOf(
-                    AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-                    AudioDeviceInfo.TYPE_BLE_HEADSET,
-                )
                 else -> intArrayOf( // wired / USB headset
                     AudioDeviceInfo.TYPE_WIRED_HEADSET,
                     AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
@@ -530,19 +570,51 @@ class PortsipConnectionService : ConnectionService() {
             }
             val device = am.availableCommunicationDevices.firstOrNull { it.type in types }
             if (device == null) {
-                PortsipLogger.w(COMPONENT, "routeToDevice($route): no device for route")
+                // A headset that just connected may not be listed yet — Telecom
+                // reports the route before the device appears in
+                // availableCommunicationDevices. Retry briefly instead of giving up,
+                // or the call stays physically on the previous output.
+                if (attempt < 10) {
+                    PortsipLogger.d(
+                        COMPONENT,
+                        "routeToDevice($route): device not listed yet, retrying (${attempt + 1})"
+                    )
+                    mainHandler.postDelayed({
+                        if (gen == routeToDeviceGeneration && hasLiveConnection()) {
+                            routeToDeviceAttempt(context, route, attempt + 1, gen)
+                        }
+                    }, 300L)
+                } else {
+                    PortsipLogger.w(COMPONENT, "routeToDevice($route): no device for route")
+                }
                 return
             }
-            // Skip if already the active device. Telecom re-emits the audio state
-            // repeatedly while a route is held; re-applying setCommunicationDevice on
-            // an already-current device tears down and re-establishes the link — for
-            // Bluetooth SCO that means the audio cuts out every couple of seconds.
-            if (am.communicationDevice?.type == device.type) {
+            // Skip only when OUR request already points there — Telecom re-emits the
+            // audio state repeatedly while a route is held and re-applying the same
+            // request churns the output. The system merely being on the right device
+            // isn't enough: a stale request for another output would still pull
+            // audio away once the policy re-evaluates.
+            if (requestedCommDeviceType == device.type &&
+                am.communicationDevice?.type == device.type
+            ) {
                 PortsipLogger.d(COMPONENT, "routeToDevice($route): already on ${device.type}, skipping")
                 return
             }
             val ok = am.setCommunicationDevice(device)
+            if (ok) requestedCommDeviceType = device.type
             PortsipLogger.d(COMPONENT, "routeToDevice($route): setCommunicationDevice(${device.type}) -> $ok")
+        }
+
+        /** Withdraws this app's communication-device request, if any. */
+        private fun clearCommDeviceRequest(am: AudioManager?) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+            if (requestedCommDeviceType == null) return
+            val audioManager = am
+                ?: instance?.applicationContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                ?: return
+            audioManager.clearCommunicationDevice()
+            requestedCommDeviceType = null
+            PortsipLogger.d(COMPONENT, "cleared communication-device request")
         }
 
         /**
@@ -605,6 +677,9 @@ class PortsipConnectionService : ConnectionService() {
          * @param context Application context
          */
         fun dispose(context: Context) {
+            clearCommDeviceRequest(
+                context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            )
             disable(context)
             synchronized(phoneAccountLock) {
                 phoneAccountHandle = null

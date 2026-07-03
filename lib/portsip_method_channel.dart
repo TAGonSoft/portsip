@@ -574,6 +574,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     } on PlatformException catch (e) {
       _logError('setAudioRoute', e);
       return -1;
+    } on MissingPluginException {
+      // Not implemented on this platform (iOS routes via setLoudspeakerStatus).
+      _logResponse('setAudioRoute', -1);
+      return -1;
     }
   }
 

@@ -20,6 +20,12 @@ class PortsipController private constructor() : OnPortSIPEvent {
     private var portSipSdk: PortSipSdk? = null
     private var context: Context? = null
 
+    /** True while the SDK audio-conference bridge exists (createAudioConference →
+     *  destroyConference). Telecom's one-active-call juggling must not reach the
+     *  SDK then: SDK-holding a joined leg stops its media and starves the mixer. */
+    @Volatile
+    private var audioConferenceActive = false
+
     /** Weak reference to the current Activity for permission dialogs and UI operations */
     private var activityRef: WeakReference<Activity>? = null
 
@@ -519,19 +525,28 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     /**
-     * Ends one leg and resumes another. Telecom keeps the resumed leg active, so
-     * there's no zero-active-call audio teardown to coordinate around as on iOS;
-     * driving the SDK hangUp/unHold and mirroring the resume is sufficient.
+     * Ends one leg and resumes another. The ended leg's Connection is destroyed
+     * (mirrors hangUp) — leaving it alive keeps a phantom call in Telecom and
+     * audio-route changes can target the dead Connection instead of the survivor.
+     * Resuming renegotiates media, so the reconfiguration window is opened to
+     * preserve the user's audio route (see beginAudioReconfiguration).
      */
     fun endCallAndResume(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val endSessionId = (arguments["endSessionId"] as? Number)?.toLong() ?: -1L
         val resumeSessionId = (arguments["resumeSessionId"] as? Number)?.toLong() ?: -1L
         val sdk = portSipSdk ?: return -1
         sdk.hangUp(endSessionId)
+        val adoptedBy = PortsipConnectionService.transferSystemCallIfNeeded(endSessionId)
+        if (adoptedBy == null) {
+            PortsipConnectionService.reportCallEnded(
+                endSessionId, android.telecom.DisconnectCause.LOCAL
+            )
+        }
         val unholdResult = sdk.unHold(resumeSessionId)
         if (unholdResult == 0) {
             PortsipConnectionService.reportCallHeld(resumeSessionId, false)
         }
+        PortsipConnectionService.beginAudioReconfiguration()
         return 0
     }
 
@@ -593,7 +608,9 @@ class PortsipController private constructor() : OnPortSIPEvent {
      * @return conference id (>= 0) on success, error code otherwise
      */
     fun createAudioConference(): Int = synchronized(sdkLock) {
-        return portSipSdk?.createAudioConference() ?: -1
+        val rc = portSipSdk?.createAudioConference() ?: -1
+        if (rc >= 0) audioConferenceActive = true
+        return rc
     }
 
     /**
@@ -626,6 +643,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
      * @return 0 on success, -1 if the SDK is not initialized
      */
     fun destroyConference(): Int = synchronized(sdkLock) {
+        audioConferenceActive = false
         val sdk = portSipSdk ?: return -1
         sdk.destroyConference()
         // No bridge → no merged conference; a later session end must not try to
@@ -667,8 +685,10 @@ class PortsipController private constructor() : OnPortSIPEvent {
             PortsipConnectionService.ROUTE_EARPIECE
         }
         // Telecom owns the route — drive it there (single owner). Only fall back to
-        // the SDK device switch when there's no system call to route through.
+        // the SDK device switch when there's no system call to route through; still
+        // record the intent so the route is asserted once a Connection appears.
         if (!PortsipConnectionService.applyAudioRoute(route)) {
+            PortsipConnectionService.setDesiredRoute(route)
             synchronized(sdkLock) {
                 portSipSdk?.setAudioDevice(
                     if (enable) PortSipEnumDefine.AudioDevice.SPEAKER_PHONE
@@ -692,7 +712,25 @@ class PortsipController private constructor() : OnPortSIPEvent {
             "headphones", "carAudio" -> PortsipConnectionService.ROUTE_WIRED_HEADSET
             else -> PortsipConnectionService.ROUTE_EARPIECE
         }
-        PortsipConnectionService.applyAudioRoute(route)
+        // Telecom owns the route; without a system call to route through, fall
+        // back to the SDK device switch (mirrors setLoudspeakerStatus) and keep
+        // the intent so the route is asserted once a Connection appears.
+        if (!PortsipConnectionService.applyAudioRoute(route)) {
+            PortsipConnectionService.setDesiredRoute(route)
+            synchronized(sdkLock) {
+                portSipSdk?.setAudioDevice(
+                    when (route) {
+                        PortsipConnectionService.ROUTE_SPEAKER ->
+                            PortSipEnumDefine.AudioDevice.SPEAKER_PHONE
+                        PortsipConnectionService.ROUTE_BLUETOOTH ->
+                            PortSipEnumDefine.AudioDevice.BLUETOOTH
+                        PortsipConnectionService.ROUTE_WIRED_HEADSET ->
+                            PortSipEnumDefine.AudioDevice.WIRED_HEADSET
+                        else -> PortSipEnumDefine.AudioDevice.EARPIECE
+                    }
+                )
+            }
+        }
         PortsipLogger.d(COMPONENT, "setAudioRoute($kind -> $route)")
     }
 
@@ -768,12 +806,23 @@ class PortsipController private constructor() : OnPortSIPEvent {
      * @param sessionId The session ID of the call
      * @param onHold Whether to put the call on hold
      */
-    fun handleConnectionServiceHold(sessionId: Long, onHold: Boolean) = synchronized(sdkLock) {
-        PortsipLogger.d(COMPONENT, "ConnectionService hold for session $sessionId: $onHold")
-        if (onHold) {
-            portSipSdk?.hold(sessionId)
-        } else {
-            portSipSdk?.unHold(sessionId)
+    fun handleConnectionServiceHold(sessionId: Long, onHold: Boolean) {
+        synchronized(sdkLock) {
+            PortsipLogger.d(COMPONENT, "ConnectionService hold for session $sessionId: $onHold")
+            // Telecom allows one active call per phone account, so activating one
+            // leg makes it hold the other. While the audio conference is up every
+            // joined leg must keep streaming — an SDK hold turns that leg sendonly
+            // and starves the mixer — so Telecom's juggling stays Connection-state
+            // only.
+            if (audioConferenceActive) {
+                PortsipLogger.d(COMPONENT, "conference active — not forwarding hold to SDK")
+                return
+            }
+            if (onHold) {
+                portSipSdk?.hold(sessionId)
+            } else {
+                portSipSdk?.unHold(sessionId)
+            }
         }
     }
 
@@ -1043,6 +1092,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
      * - Releases SDK instance and context references
      */
     fun dispose() = synchronized(sdkLock) {
+        audioConferenceActive = false
         // Dispose ConnectionService
         context?.let { ctx ->
             PortsipConnectionService.dispose(ctx)
@@ -1074,6 +1124,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
      * the context/activity references — those are app-lifetime concerns.
      */
     fun unInitialize() = synchronized(sdkLock) {
+        audioConferenceActive = false
         portSipSdk?.unRegisterServer(0)
         portSipSdk?.unInitialize()
         portSipSdk?.setOnPortSIPEvent(null)
