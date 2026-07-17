@@ -1,3 +1,28 @@
+## 0.1.2
+
+* **Feature (Android)**: Telecom-owned audio routing. Adds
+`setAudioRoute({kind})` (`builtInReceiver | builtInSpeaker | bluetooth |
+headphones`) and the `onConnectionServiceAudioRoute`
+([ConnectionServiceAudioRouteEvent]) event carrying `availablePorts` and
+`currentPort`, so a route picker can be driven entirely from plugin events.
+The chosen route now survives hold, unhold, swap, conference join and
+end-and-resume. When routing through Telecom, call
+`enableAudioManager(enable: false)` — the SDK's audio manager competes with
+Telecom and resets the route on every new call leg.
+* **Fix (Android)**: Bluetooth audio no longer drops seconds after connecting.
+* **Fix (Android)**: `endCallAndResume` no longer leaves a phantom call in the
+system UI and preserves the audio route across the resume.
+* **Fix (Android)**: system hold requests are no longer forwarded to the SDK
+while a conference is active (they silenced joined legs).
+* **Fix (iOS)**: the loudspeaker choice survives answer, hold, swap and merge
+instead of resetting to the receiver mid-call.
+* **Fix (iOS)**: the system in-call UI's speaker button no longer shows stale
+state or stops responding.
+* **Fix (iOS)**: Bluetooth audio no longer goes silent after ending one leg of
+a multi-call.
+* **Fix**: `setAudioRoute` returns -1 on platforms where it isn't implemented
+(iOS) instead of throwing `MissingPluginException`.
+
 ## 0.1.1
 
 * **Feature**: `getStatistics({sessionId})` — requests RTP media statistics for

@@ -99,6 +99,11 @@ class PortsipController: NSObject {
     /// Serial dispatch queue for synchronizing all SDK operations
     private let sdkQueue = DispatchQueue(label: "com.tagonsoft.portsip.sdk")
 
+    /// One-shot: armed when a leg ends with survivors (which can kill the
+    /// Bluetooth SCO link), consumed at the survivor's connect to bounce the
+    /// route (see PortsipCallKitProvider.performBluetoothRevive).
+    private var audioRebindPending = false
+
     /// Private initializer to enforce singleton pattern.
     /// Sets up lifecycle observers for background handling.
     private override init() {
@@ -112,13 +117,11 @@ class PortsipController: NSObject {
     }
     
     private func configureAudioSession() {
-        let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(AVAudioSession.Category.playAndRecord)
-            try session.setMode(AVAudioSession.Mode.voiceChat)
+            try Self.applyCallSessionConfiguration()
         } catch {
             let errorMessage = "Failed to configure audio session: \(error.localizedDescription)"
-            
+
             // Send error event to Flutter
             let eventData: [String: Any] = [
                 "error": errorMessage,
@@ -126,6 +129,37 @@ class PortsipController: NSObject {
                 "errorDomain": (error as NSError).domain
             ]
             PortsipEventBridge.shared.sendEvent(name: "onAudioSessionError", data: eventData)
+        }
+    }
+
+    /// PlayAndRecord + voiceChat with allowBluetooth/allowBluetoothA2DP —
+    /// without them the CallKit speaker button's selected state snaps back.
+    /// Category and mode go in SEPARATE calls (the combined overload breaks the
+    /// button); the options are re-applied after setMode, which can strip them.
+    static func applyCallSessionConfiguration() throws {
+        let session = AVAudioSession.sharedInstance()
+        let options: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP]
+        try session.setCategory(.playAndRecord, options: options)
+        try session.setMode(.voiceChat)
+        if session.categoryOptions != options {
+            try session.setCategory(.playAndRecord, options: options)
+        }
+    }
+
+    /// Re-establishes the call category/options unless they are already in
+    /// place. The SDK's audio-engine (re)starts reconfigure the session and can
+    /// drop the Bluetooth options the system in-call UI depends on.
+    static func ensureCallSessionConfiguration() {
+        let session = AVAudioSession.sharedInstance()
+        let required: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP]
+        if session.category != .playAndRecord
+            || !session.categoryOptions.contains(required)
+            || session.mode != .voiceChat {
+            do {
+                try applyCallSessionConfiguration()
+            } catch {
+                PortsipLogger.e("Controller", "ensureCallSessionConfiguration failed: \(error)")
+            }
         }
     }
     
@@ -521,9 +555,18 @@ class PortsipController: NSObject {
 
             let sessionId = portSIPSDK.call(callee, sendSdp: sendSdp, videoCall: videoCall)
 
-            // Only start audio and report to CallKit if call succeeded
+            // Only prepare audio and report to CallKit if call succeeded
             if sessionId > 0 {
-                portSIPSDK.startAudio(AVAudioSession.sharedInstance())
+                if PortsipCallKitProvider.shared.isCallKitEnabled {
+                    // SDK CallKit contract: configure the session at call
+                    // start; the engine starts only in didActivate. Starting it
+                    // pre-activation triggers delayed reconfigurations that
+                    // keep clearing the route override mid-call.
+                    _ = portSIPSDK.configureAudioSession()
+                } else {
+                    portSIPSDK.startAudio(AVAudioSession.sharedInstance())
+                }
+                Self.ensureCallSessionConfiguration()
                 if reportToConnectionService {
                     PortsipCallKitProvider.shared.reportOutgoingCall(
                         sessionId: Int(sessionId),
@@ -809,28 +852,25 @@ class PortsipController: NSObject {
         let enable = arguments["enable"] as? Bool ?? false
         let sessionId = arguments["sessionId"] as? Int ?? -1
 
-        sdkQueue.sync {
-            // Always call SDK to change audio route
-            portSIPSDK.setLoudspeakerStatus(enable)
-        }
+        // An API call is a definitive user choice — record it for the
+        // engine-steal restore logic.
+        PortsipCallKitProvider.shared.noteUserSpeakerChoice(enable)
 
-        // Remember the intent so it survives a CallKit session reactivation
-        // (hold/swap/merge resets the route to the receiver).
-        PortsipCallKitProvider.shared.setDesiredSpeaker(enable)
-
-        // If CallKit is disabled, perform action directly
-        // When CallKit is enabled, the audio route change notification handles this
-        if !PortsipCallKitProvider.shared.isCallKitEnabled {
+        if PortsipCallKitProvider.shared.isCallKitEnabled {
+            // Route via a session-level override: the SDK's setLoudspeakerStatus
+            // flips .defaultToSpeaker instead, which the system in-call UI
+            // can't track — its speaker button goes stale or unresponsive.
+            do {
+                try AVAudioSession.sharedInstance()
+                    .overrideOutputAudioPort(enable ? .speaker : .none)
+            } catch {
+                PortsipLogger.e("Controller", "loudspeaker override(\(enable)) failed: \(error)")
+            }
+        } else {
+            sdkQueue.sync {
+                portSIPSDK.setLoudspeakerStatus(enable)
+            }
             performSpeakerAction(sessionId: sessionId, enableSpeaker: enable)
-        }
-    }
-
-    /// Re-applies the loudspeaker through the SDK after a hold/swap resume drops
-    /// the output to the receiver. Uses the SDK path (not an AVAudioSession
-    /// override) so it sticks the same way the initial speaker-on does.
-    func reassertLoudspeaker() {
-        sdkQueue.sync {
-            portSIPSDK.setLoudspeakerStatus(true)
         }
     }
 
@@ -886,7 +926,16 @@ class PortsipController: NSObject {
             if PortsipCallKitProvider.shared.sessionCount <= 1 {
                 sdkQueue.sync {
                     portSIPSDK.stopAudio(AVAudioSession.sharedInstance())
+                    audioRebindPending = false
                 }
+            } else {
+                // Ending a leg with survivors can collapse the Bluetooth SCO
+                // link (route still reads BluetoothHFP, silent both ways).
+                // Bounce now and again at the survivor's connect, whose
+                // renegotiation can kill the link once more.
+                PortsipCallKitProvider.shared.performBluetoothRevive()
+                sdkQueue.sync { audioRebindPending = true }
+                Self.ensureCallSessionConfiguration()
             }
             // Send event to Flutter
             let eventData: [String: Any] = [
@@ -929,6 +978,17 @@ class PortsipController: NSObject {
         }
     }
 
+    /// Prepares the SDK audio session for a CallKit-managed call WITHOUT
+    /// starting the engine. Per the SDK's CallKit contract this runs at
+    /// CXStartCallAction / CXAnswerCallAction time; startAudio/stopAudio are
+    /// driven exclusively by the session activation callbacks.
+    func prepareCallAudioSession() {
+        sdkQueue.sync {
+            _ = portSIPSDK.configureAudioSession()
+        }
+        Self.ensureCallSessionConfiguration()
+    }
+
     /// Called when CallKit ACTIVATES the shared audio session. CallKit owns
     /// session activation around hold / unhold / swap (the held call's session
     /// is deactivated and reactivated), so the SDK audio engine must (re)start
@@ -938,6 +998,7 @@ class PortsipController: NSObject {
     func activateAudioSession() {
         sdkQueue.sync {
             portSIPSDK.startAudio(AVAudioSession.sharedInstance())
+            Self.ensureCallSessionConfiguration()
             // A conference bridge doesn't survive an audio-engine restart, and
             // re-joining sessions into the old bridge attaches them to a dead
             // mixer (joins return 0 but audio stays silent). Rebuild the
@@ -1153,6 +1214,10 @@ extension PortsipController: PortSIPEventDelegate {
     }
 
     func onInviteAnswered(_ sessionId: Int, callerDisplayName: String!, caller: String!, calleeDisplayName: String!, callee: String!, audioCodecs: String!, videoCodecs: String!, existsAudio: Bool, existsVideo: Bool, sipMessage: String!) {
+        // The engine performs a fingerprint-less session config at answer that
+        // can clear an active speaker override — arm the one-shot restore.
+        PortsipCallKitProvider.shared.expectAnswerReset()
+
         let eventData: [String: Any] = [
             PortsipConstants.EventKeys.sessionId: sessionId,
             PortsipConstants.EventKeys.callerDisplayName: callerDisplayName ?? "",
@@ -1192,10 +1257,21 @@ extension PortsipController: PortSIPEventDelegate {
         // Report call connected to CallKit (for outgoing calls)
         PortsipCallKitProvider.shared.reportCallConnected(sessionId: sessionId)
 
-        // A newly connected leg negotiates media and the SDK drops the route to
-        // the receiver — open the window so the loudspeaker is re-asserted (adding
-        // a call rings longer than the swap window, so this is its own trigger).
-        PortsipCallKitProvider.shared.beginAudioReconfiguration()
+        // Connect renegotiation can strip the Bluetooth category options
+        // without a route-change notification — re-ensure them.
+        Self.ensureCallSessionConfiguration()
+
+        // Consume the rebind one-shot (see audioRebindPending).
+        let rebind = sdkQueue.sync { () -> Bool in
+            let pending = audioRebindPending
+            audioRebindPending = false
+            return pending
+        }
+        if rebind {
+            // No-op unless the call is on Bluetooth — receiver/speaker routes
+            // survive the leg teardown untouched.
+            PortsipCallKitProvider.shared.performBluetoothRevive()
+        }
 
         let eventData: [String: Any] = [
             PortsipConstants.EventKeys.sessionId: sessionId
@@ -1240,6 +1316,7 @@ extension PortsipController: PortSIPEventDelegate {
     // MARK: - Unused Delegate Methods (Required by Protocol - Empty Implementations)
 
     func onInviteSessionProgress(_ sessionId: Int, audioCodecs: String!, videoCodecs: String!, existsEarlyMedia: Bool, existsAudio: Bool, existsVideo: Bool, sipMessage: String!) {}
+
     func onInviteUpdated(_ sessionId: Int, audioCodecs: String!, videoCodecs: String!, screenCodecs: String!, existsAudio: Bool, existsVideo: Bool, existsScreen: Bool, sipMessage: String!) {}
     func onInviteBeginingForward(_ forwardTo: String!) {}
     func onDialogStateUpdated(_ BLFMonitoredUri: String!, blfDialogState BLFDialogState: String!, blfDialogId BLFDialogId: String!, blfDialogDirection BLFDialogDirection: String!) {}

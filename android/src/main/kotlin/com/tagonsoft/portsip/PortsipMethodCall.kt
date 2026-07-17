@@ -71,6 +71,9 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Enables or disables the loudspeaker for the current call */
     SET_LOUDSPEAKER_STATUS("setLoudspeakerStatus"),
 
+    /** Routes the current call's audio to a specific output (Telecom-owned) */
+    SET_AUDIO_ROUTE("setAudioRoute"),
+
     /** Sends DTMF tones during an active call */
     SEND_DTMF("sendDtmf"),
 

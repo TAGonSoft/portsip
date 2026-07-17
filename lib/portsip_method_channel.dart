@@ -563,6 +563,24 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  @override
+  Future<int> setAudioRoute({required String kind}) async {
+    final args = {'kind': kind};
+    _logCall('setAudioRoute', args);
+    try {
+      await methodChannel.invokeMethod<void>('setAudioRoute', args);
+      _logResponse('setAudioRoute', 0);
+      return 0;
+    } on PlatformException catch (e) {
+      _logError('setAudioRoute', e);
+      return -1;
+    } on MissingPluginException {
+      // Not implemented on this platform (iOS routes via setLoudspeakerStatus).
+      _logResponse('setAudioRoute', -1);
+      return -1;
+    }
+  }
+
   /// Sends a DTMF tone during an active call.
   ///
   /// Invokes the native 'sendDtmf' method via MethodChannel.

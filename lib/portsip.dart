@@ -540,6 +540,18 @@ class Portsip {
     return await PortsipPlatform.instance.setLoudspeakerStatus(enable: enable);
   }
 
+  /// Routes the current call's audio to a specific output (Android, Telecom-owned).
+  ///
+  /// [kind] - one of: builtInReceiver, builtInSpeaker, bluetooth, headphones.
+  /// Returns 0 if successful, -1 on iOS (not implemented there — use
+  /// [setLoudspeakerStatus], or route via AVAudioSession in the app).
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
+  Future<int> setAudioRoute({required String kind}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.setAudioRoute(kind: kind);
+  }
+
   /// Send DTMF tone
   ///
   /// [sessionId] - The session ID
@@ -685,6 +697,12 @@ class Portsip {
   ///
   /// This is critical for DTMF functionality on Android.
   /// Should be called after register() and before making calls.
+  ///
+  /// Android: when calls are reported to the ConnectionService and audio is
+  /// routed through Telecom ([setAudioRoute]), pass false. The SDK's built-in
+  /// audio manager competes with Telecom and resets the route to earpiece on
+  /// every new call leg.
+  ///
   /// Returns 0 if successful, error code otherwise.
   ///
   /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.

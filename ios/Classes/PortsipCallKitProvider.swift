@@ -66,21 +66,24 @@ class PortsipCallKitProvider: NSObject {
     /// Tracks the last known speaker state to prevent duplicate events
     private var lastSpeakerState: Bool?
 
-    /// The user's intended loudspeaker state. Set by explicit speaker control and
-    /// by genuine output overrides made OUTSIDE a hold/swap reconfiguration. Used
-    /// to re-assert the route after a resume, where the SDK otherwise drops it to
-    /// the receiver. Kept separate from lastSpeakerState so it survives the
-    /// transient route changes a hold transition produces.
-    private var desiredSpeakerOn = false
+    /// One-shot: a Bluetooth revive bounce is in flight (see performBluetoothRevive).
+    private var bluetoothRevivePending = false
 
-    /// True while a hold/swap/merge is reconfiguring audio. During this window the
-    /// SDK resets the output to the receiver on resume; we re-assert the speaker
-    /// instead of mistaking that reset for the user turning speaker off.
-    private var audioReconfiguring = false
+    /// Category options at the previous route event. User route actions never
+    /// rewrite the options; the engine's reconfigurations do — that fingerprint
+    /// tells them apart when both land on the receiver.
+    private var lastCategoryOpts: UInt = 0
 
-    /// Bumped each time the reconfiguration window (re)opens so a stale close
-    /// scheduled by an earlier transition doesn't shut a later one early.
-    private var reconfigGeneration = 0
+    /// One-shot: right after answer/activation the engine performs a session
+    /// config that clears an active override with no observable fingerprint.
+    /// Armed at onInviteAnswered/didActivate, consumed by the next route event.
+    private var answerResetPending = false
+
+    /// The user's speaker choice — the restore machinery's only basis. Written
+    /// solely by user signals (loudspeaker API, .override route events,
+    /// fingerprint-less receiver landings), never by the engine's route flips,
+    /// so a restore can't re-assert something the user turned off.
+    private var userWantsSpeaker = false
 
     /// Prevents recursive audio route change handling
     private var isHandlingRouteChange = false
@@ -161,47 +164,17 @@ class PortsipCallKitProvider: NSObject {
         }
     }
 
-    /// Records the user's intended loudspeaker state (see desiredSpeakerOn).
-    func setDesiredSpeaker(_ on: Bool) {
-        sessionLock.sync {
-            desiredSpeakerOn = on
-        }
-    }
 
-    /// Opens the audio-reconfiguration window (see audioReconfiguring). Called at
-    /// every hold/unhold/swap/connect so the route resets the SDK makes while
-    /// renegotiating media are re-asserted rather than read as user intent.
-    /// Auto-closes after the reconfiguration settles.
-    ///
-    /// Re-assertion only ever acts when desiredSpeakerOn is set, and that intent
-    /// is cleared at the start of each new call group, so opening the window on a
-    /// plain single call is harmless (nothing to re-assert until the user picks
-    /// the speaker).
-    func beginAudioReconfiguration() {
-        let gen: Int = sessionLock.sync {
-            audioReconfiguring = true
-            reconfigGeneration += 1
-            return reconfigGeneration
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-            guard let self = self else { return }
-            self.sessionLock.sync {
-                if self.reconfigGeneration == gen {
-                    self.audioReconfiguring = false
-                }
-            }
-        }
-    }
-    
     // MARK: - Thread-Safe Session Management
 
     /// Thread-safe setter for session-to-UUID mapping
     private func setUUID(_ uuid: UUID, for sessionId: Int) {
         sessionLock.sync {
-            // First call of a new group → start with the loudspeaker intent clear
-            // so it never leaks from a previous, unrelated call.
+            // First leg of a new call group — drop any stale speaker memory.
             if sessionToUUID.isEmpty {
-                desiredSpeakerOn = false
+                lastSpeakerState = nil
+                answerResetPending = false
+                userWantsSpeaker = false
             }
             sessionToUUID[sessionId] = uuid
         }
@@ -214,10 +187,13 @@ class PortsipCallKitProvider: NSObject {
             programmaticHoldCounts.removeValue(forKey: sessionId)
             sessionHoldStates.removeValue(forKey: sessionId)
             pendingDisplayNames.removeValue(forKey: sessionId)
-            // Last call gone — drop the speaker intent so the next call starts
-            // on the receiver rather than inheriting this one's loudspeaker.
+            // Last call gone — the speaker memory dies with the call group so
+            // it can't leak a restore into the next call.
             if sessionToUUID.isEmpty {
-                desiredSpeakerOn = false
+                lastSpeakerState = nil
+                answerResetPending = false
+                userWantsSpeaker = false
+                bluetoothRevivePending = false
             }
         }
     }
@@ -247,15 +223,38 @@ class PortsipCallKitProvider: NSObject {
         }
     }
 
+    /// Arms the one-shot answer-reset expectation (see answerResetPending).
+    func expectAnswerReset() {
+        sessionLock.sync { answerResetPending = true }
+    }
+
+    /// Records the user's speaker choice made through the plugin's loudspeaker
+    /// API (see userWantsSpeaker).
+    func noteUserSpeakerChoice(_ on: Bool) {
+        sessionLock.sync { userWantsSpeaker = on }
+    }
+
+    /// Revives a Bluetooth call whose SCO voice link died while the route
+    /// still reads BluetoothHFP: iOS renegotiates SCO only on a real route
+    /// change, so bounce the input via the built-in mic and back (return
+    /// half in handleAudioRouteChange).
+    func performBluetoothRevive() {
+        let session = AVAudioSession.sharedInstance()
+        guard session.currentRoute.outputs.first?.portType == .bluetoothHFP,
+              let mic = session.availableInputs?.first(where: { $0.portType == .builtInMic }) else {
+            return
+        }
+        PortsipLogger.d(PortsipCallKitProvider.COMPONENT, "BT revive: bouncing route via receiver")
+        sessionLock.sync { bluetoothRevivePending = true }
+        try? session.setPreferredInput(mic)
+    }
+
     /// Records the hold state just applied to the SDK for [sessionId]. Called
     /// by every path that successfully drives the SDK hold/unhold.
     func noteHoldState(sessionId: Int, onHold: Bool) {
         sessionLock.sync {
             sessionHoldStates[sessionId] = onHold
         }
-        // A hold/unhold/swap is about to renegotiate audio — open the window so
-        // the SDK's route reset on resume is re-asserted, not taken as intent.
-        beginAudioReconfiguration()
     }
 
     /// The last hold state applied to the SDK for [sessionId], or nil if its
@@ -309,9 +308,14 @@ class PortsipCallKitProvider: NSObject {
             programmaticHoldCounts.removeAll()
             sessionHoldStates.removeAll()
             pendingDisplayNames.removeAll()
+            bluetoothRevivePending = false
+            // The speaker memory dies with the call group so it can't leak a
+            // restore into the next call.
+            lastSpeakerState = nil
+            answerResetPending = false
+            userWantsSpeaker = false
             conferencePrimarySession = nil
             conferenceMergedAwaySessions.removeAll()
-            desiredSpeakerOn = false
         }
     }
 
@@ -507,10 +511,6 @@ class PortsipCallKitProvider: NSObject {
             CXEndCallAction(call: endUUID),
             CXSetHeldCallAction(call: resumeUUID, onHold: false),
         ])
-
-        // Resuming the survivor renegotiates its media and the SDK drops the route
-        // to the receiver — open the window so the loudspeaker is re-asserted.
-        beginAudioReconfiguration()
 
         callController.request(transaction) { error in
             if let error = error {
@@ -759,11 +759,10 @@ extension PortsipCallKitProvider: CXProviderDelegate {
     /// it here or the call goes silent after a hold/swap/merge.
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
         PortsipLogger.d(PortsipCallKitProvider.COMPONENT, "audio session ACTIVATED → startAudio")
+        // The engine's first post-activation config can clear an active
+        // override without a fingerprint — arm the one-shot restore.
+        expectAnswerReset()
         PortsipController.shared.activateAudioSession()
-        // Reactivation precedes the SDK's route reset on resume — keep the
-        // reconfiguration window open so the reset is re-asserted (the actual
-        // re-assert happens in handleAudioRouteChange once the route settles).
-        beginAudioReconfiguration()
     }
 
     /// Called when CallKit deactivates the shared audio session (held / ended).
@@ -774,6 +773,9 @@ extension PortsipCallKitProvider: CXProviderDelegate {
     
     /// Called when the user answers an incoming call.
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
+        // SDK CallKit contract: prepare the audio session here; the engine
+        // starts in didActivate.
+        PortsipController.shared.prepareCallAudioSession()
     }
 
     /// Called when the user ends a call.
@@ -864,6 +866,10 @@ extension PortsipCallKitProvider: CXProviderDelegate {
     
     /// Called when an outgoing call starts connecting.
     func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        // SDK CallKit contract: prepare the audio session here; the engine
+        // starts in didActivate.
+        PortsipController.shared.prepareCallAudioSession()
+
         // The call was already initiated by PortsipController. Attach the
         // caller name now — outgoing calls don't reliably honor later updates.
         if let sessionId = getSessionId(for: action.callUUID),
@@ -921,33 +927,91 @@ extension PortsipCallKitProvider: CXProviderDelegate {
         // Check speaker state for ANY route change (not just override/categoryChange)
         // This ensures we catch all speaker button taps
         let isSpeakerActive = currentRoute.outputs.first?.portType == .builtInSpeaker
+        let hasExternalOutput = currentRoute.outputs.contains {
+            $0.portType != .builtInReceiver && $0.portType != .builtInSpeaker
+        }
 
-        let (wantSpeaker, reconfiguring) = sessionLock.sync { (desiredSpeakerOn, audioReconfiguring) }
+        let currentOpts = AVAudioSession.sharedInstance().categoryOptions.rawValue
+        let hasActiveCalls = sessionCount > 0
+        let (optsChanged, wantsSpeaker, engineBusy, answerReset) = sessionLock.sync { () -> (Bool, Bool, Bool, Bool) in
+            let changed = currentOpts != lastCategoryOpts
+            lastCategoryOpts = currentOpts
+            let answer = answerResetPending
+            answerResetPending = false
+            return (
+                changed,
+                userWantsSpeaker,
+                sessionHoldStates.values.contains(true) || conferencePrimarySession != nil,
+                answer
+            )
+        }
+
         PortsipLogger.d(
             PortsipCallKitProvider.COMPONENT,
             "routeChange reason=\(getRouteChangeReasonName(reason)) " +
             "output=\(currentRoute.outputs.first?.portType.rawValue ?? "none") " +
-            "isSpeaker=\(isSpeakerActive) desiredSpeaker=\(wantSpeaker) reconfig=\(reconfiguring)"
+            "isSpeaker=\(isSpeakerActive) external=\(hasExternalOutput) " +
+            "optsChanged=\(optsChanged) busy=\(engineBusy) opts=\(currentOpts)"
         )
 
-        // Outside a hold/swap reconfiguration, an explicit output override is the
-        // user choosing speaker/earpiece (in-app or CallKit button) — record the
-        // intent. During reconfiguration the same .override is the SDK resetting
-        // the route on resume, so it must NOT clobber the intent.
-        if reason == .override && !reconfiguring {
-            setDesiredSpeaker(isSpeakerActive)
+        // Return half of the Bluetooth revive: consumed by the FIRST event
+        // after the bounce (a stale flag would hijack a later user pick);
+        // re-select the BT input only if the bounce landed on the receiver.
+        let revive = sessionLock.sync { () -> Bool in
+            guard bluetoothRevivePending else { return false }
+            bluetoothRevivePending = false
+            return true
+        }
+        if revive && currentRoute.outputs.first?.portType == .builtInReceiver {
+            PortsipLogger.d(PortsipCallKitProvider.COMPONENT, "BT revive: back from receiver to Bluetooth")
+            let session = AVAudioSession.sharedInstance()
+            if let bt = session.availableInputs?.first(where: { $0.portType == .bluetoothHFP }) {
+                try? session.setPreferredInput(bt)
+            }
+            return
         }
 
-        // During reconfiguration the SDK drops the resumed leg to the receiver.
-        // If the user wants the loudspeaker and there's no external output, re-assert
-        // it through the SDK — the same path that turns speaker on at call start.
-        if reconfiguring && wantSpeaker && !isSpeakerActive {
-            let hasExternalOutput = currentRoute.outputs.contains {
-                $0.portType != .builtInReceiver && $0.portType != .builtInSpeaker
-            }
+        // The SDK's async reconfigurations after startAudio strip the Bluetooth
+        // category options the system in-call UI requires — re-ensure them
+        // (no-op once in place, so no notification ping-pong).
+        if hasActiveCalls {
+            PortsipController.ensureCallSessionConfiguration()
+        }
+
+        // Restore the speaker when an engine/session reconfiguration steals the
+        // route across answer/hold/swap/merge. Engine steals carry a fingerprint
+        // user actions never produce: a category-options rewrite, options still
+        // in the engine's stripped state, or the armed answer-reset. Any other
+        // receiver-landing is honored as a user action.
+        let sessionConfigured = AVAudioSession.CategoryOptions(rawValue: currentOpts)
+            .contains([.allowBluetooth, .allowBluetoothA2DP])
+        let engineSteal = optsChanged || !sessionConfigured || answerReset
+        if hasActiveCalls && engineSteal && wantsSpeaker && !isSpeakerActive && !hasExternalOutput {
+            PortsipLogger.d(
+                PortsipCallKitProvider.COMPONENT,
+                "restoring speaker after engine config rewrite"
+            )
+            try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
+            // Keep the choice intact so a follow-up rewrite is also restored;
+            // don't notify Flutter about a state we just corrected.
+            return
+        }
+
+        // Record the user's choice from user signals only: .override events are
+        // explicit picks; a fingerprint-less receiver-landing is the system
+        // button's OFF. Engine flips match neither. Only while a call exists,
+        // so a teardown event can't leak the choice into the next call.
+        if hasActiveCalls {
             if !hasExternalOutput {
-                PortsipLogger.d(PortsipCallKitProvider.COMPONENT, "re-asserting speaker during reconfiguration")
-                PortsipController.shared.reassertLoudspeaker()
+                if reason == .override {
+                    sessionLock.sync { userWantsSpeaker = isSpeakerActive }
+                } else if !isSpeakerActive && !engineSteal {
+                    sessionLock.sync { userWantsSpeaker = false }
+                }
+            } else {
+                // An external device (BT/headphones/car) supersedes the choice;
+                // on disconnect the route falls back to the receiver.
+                sessionLock.sync { userWantsSpeaker = false }
             }
         }
 
