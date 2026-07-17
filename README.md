@@ -32,7 +32,9 @@ This plugin provides a cross-platform Dart API built on top of the native PortSI
 
 - **SIP Registration** - Register and authenticate with SIP servers
 - **Outgoing Voice Calls** - Make and manage outgoing audio calls
-- **Call Controls** - Hold, mute, DTMF tones, loudspeaker toggle
+- **Call Controls** - Hold, mute, DTMF tones, loudspeaker toggle, audio route selection (Android)
+- **Conference Calls** - Merge calls into a native conference (`requestCallGroup`, `endCallAndResume`)
+- **Call Statistics** - Poll RTP media statistics during a call (`getStatistics`)
 - **Audio Codecs** - Configure preferred audio codecs (OPUS, G.722, G.729, etc.)
 - **Audio Processing** - AEC, AGC, ANS, CNG, VAD for enhanced audio quality
 - **SRTP Encryption** - Configurable secure RTP policy for encrypted calls
@@ -56,7 +58,7 @@ Add `portsip` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  portsip: ^0.0.2
+  portsip: ^0.1.2
 ```
 
 ### SDK Setup (Required)
@@ -221,7 +223,7 @@ await portsip.enableVAD(enable: true);  // Voice Activity Detection
 // On Android only:
 await portsip.enableAEC(enable: true);  // Echo Cancellation
 await portsip.enableAGC(enable: true);  // Automatic Gain Control
-await portsip.enableAudioManager(enable: true);  // Required for DTMF
+await portsip.enableAudioManager(enable: true);  // For DTMF; use false with ConnectionService audio routing
 
 // 4. Configure SRTP policy (0=None, 1=Prefer, 2=Force)
 await portsip.setSrtpPolicy(policy: 0);
@@ -546,9 +548,33 @@ await portsip.enableConnectionService(enabled: true);
 | `onConnectionServiceEndCall` | `sessionId` | User ended call from system UI |
 | `onConnectionServiceHold` | `sessionId`, `onHold` | User toggled hold from system UI |
 | `onConnectionServiceMute` | `sessionId`, `muted` | User toggled mute from system UI |
-| `onConnectionServiceSpeaker` | `sessionId`, `enableSpeaker` | User toggled speaker from system UI |
+| `onConnectionServiceAudioRoute` | `sessionId`, `availablePorts`, `currentPort` | Audio route changed (system UI or `setAudioRoute`) |
 | `onConnectionServiceDTMF` | `sessionId`, `digits` | User sent DTMF from system UI |
 | `onConnectionServiceFailure` | `sessionId`, `message` | ConnectionService operation failed |
+
+### Audio Routing (Android)
+
+With ConnectionService enabled, the system (Telecom) owns the call's audio
+route. Use `setAudioRoute` to switch outputs and listen to
+`ConnectionServiceAudioRouteEvent` to drive a route picker:
+
+```dart
+// kinds: builtInReceiver | builtInSpeaker | bluetooth | headphones
+await portsip.setAudioRoute(kind: 'bluetooth');
+
+portsip.typedEvents.listen((event) {
+  if (event is ConnectionServiceAudioRouteEvent) {
+    print('Available: ${event.availablePorts}, current: ${event.currentPort}');
+  }
+});
+```
+
+> **Important:** When routing audio through ConnectionService, call
+> `enableAudioManager(enable: false)` — the SDK's built-in audio manager
+> competes with Telecom and resets the route on every new call leg.
+>
+> On iOS `setAudioRoute` returns -1; use `setLoudspeakerStatus` instead
+> (Bluetooth/headphones are handled by the system).
 
 ## Audio Processing
 
@@ -561,7 +587,7 @@ The plugin provides audio processing features to enhance call quality:
 | `enableANS` | Android | Automatic Noise Suppression - reduces background noise |
 | `enableCNG` | Both | Comfort Noise Generation - generates background noise during silence |
 | `enableVAD` | Both | Voice Activity Detection - detects speech to reduce bandwidth |
-| `enableAudioManager` | Android | Required for DTMF functionality |
+| `enableAudioManager` | Android | Required for DTMF; pass `false` when routing audio through ConnectionService |
 | `setSrtpPolicy` | Both | SRTP encryption: 0=None, 1=Prefer, 2=Force |
 | `enable3GppTags` | Both | 3GPP headers for carrier compatibility |
 
