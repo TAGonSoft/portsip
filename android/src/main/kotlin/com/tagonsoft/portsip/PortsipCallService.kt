@@ -30,19 +30,19 @@ class PortsipCallService : Service() {
         private const val ACTION_SHOW = "com.tagonsoft.portsip.SHOW_CALL"
         private const val ACTION_HANG_UP = "com.tagonsoft.portsip.HANG_UP"
         private const val EXTRA_DISPLAY_NAME = "displayName"
-        private const val EXTRA_CONNECTED_AT = "connectedAt"
+        private const val EXTRA_STARTED_AT = "startedAt"
 
         /**
          * Shows (or updates) the ongoing-call notification.
          *
          * @param displayName Name shown on the notification
-         * @param connectedAt Epoch ms the call connected, or 0 while dialing
+         * @param startedAt Epoch ms the call started (dial time)
          */
-        fun show(context: Context, displayName: String, connectedAt: Long) {
+        fun show(context: Context, displayName: String, startedAt: Long) {
             val intent = Intent(context, PortsipCallService::class.java)
                 .setAction(ACTION_SHOW)
                 .putExtra(EXTRA_DISPLAY_NAME, displayName)
-                .putExtra(EXTRA_CONNECTED_AT, connectedAt)
+                .putExtra(EXTRA_STARTED_AT, startedAt)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
@@ -77,19 +77,19 @@ class PortsipCallService : Service() {
             return START_NOT_STICKY
         }
         val name = intent?.getStringExtra(EXTRA_DISPLAY_NAME).orEmpty().ifEmpty { "Call" }
-        val connectedAt = intent?.getLongExtra(EXTRA_CONNECTED_AT, 0L) ?: 0L
+        val startedAt = intent?.getLongExtra(EXTRA_STARTED_AT, 0L) ?: 0L
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
         } else {
             0
         }
         ServiceCompat.startForeground(
-            this, NOTIFICATION_ID, buildNotification(name, connectedAt), type
+            this, NOTIFICATION_ID, buildNotification(name, startedAt), type
         )
         return START_NOT_STICKY
     }
 
-    private fun buildNotification(name: String, connectedAt: Long): Notification {
+    private fun buildNotification(name: String, startedAt: Long): Notification {
         ensureChannel()
         val hangUp = PendingIntent.getService(
             this,
@@ -110,23 +110,16 @@ class PortsipCallService : Service() {
             // alpha on most system UIs and a solid brand fill is too heavy.
             builder.setColor(color)
         }
-        if (connectedAt > 0L) {
-            // CallStyle runs its own chronometer off `when` — only correct once
-            // the call is actually connected.
-            val person = Person.Builder().setName(name).setImportant(true).build()
-            builder
-                .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, hangUp))
-                .setWhen(connectedAt)
-                .setShowWhen(true)
-                .setUsesChronometer(true)
-        } else {
-            // Dialing: plain style — CallStyle would tick a timer from post time.
-            builder
-                .setContentTitle(name)
-                .setContentText("Calling…")
-                .setShowWhen(false)
-                .addAction(R.drawable.portsip_ic_call, "Hang up", hangUp)
-        }
+        // CallStyle from dial to hang-up: it's the only template with the native
+        // Hang up button and avatar. Its chronometer ticks regardless, so the
+        // timer runs from `startedAt` (dial time, stamped once, never reset) —
+        // same behavior as the system dialer's call notification.
+        val person = Person.Builder().setName(name).setImportant(true).build()
+        builder
+            .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, hangUp))
+            .setWhen(startedAt)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
         packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
             builder.setContentIntent(
                 PendingIntent.getActivity(

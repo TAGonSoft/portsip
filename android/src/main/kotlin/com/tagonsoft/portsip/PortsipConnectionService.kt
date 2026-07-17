@@ -85,9 +85,9 @@ class PortsipConnectionService : ConnectionService() {
         @Volatile
         private var notificationName: String = ""
 
-        /** Epoch ms the current call connected, 0 while dialing */
+        /** Epoch ms the current call started (dial time), 0 when idle */
         @Volatile
-        private var notificationConnectedAt: Long = 0L
+        private var notificationStartedAt: Long = 0L
 
         /** Whether the ongoing-call notification is enabled (configure()) */
         @Volatile
@@ -105,13 +105,16 @@ class PortsipConnectionService : ConnectionService() {
 
         private fun showCallNotification() {
             if (!notificationEnabled) return
+            // Not stamped yet → no call has connected; never post with a zero
+            // timer base (the chronometer would show time since epoch).
+            if (notificationStartedAt == 0L) return
             val context = appContext ?: return
-            PortsipCallService.show(context, notificationName, notificationConnectedAt)
+            PortsipCallService.show(context, notificationName, notificationStartedAt)
         }
 
         private fun stopCallNotification() {
             notificationName = ""
-            notificationConnectedAt = 0L
+            notificationStartedAt = 0L
             appContext?.let { PortsipCallService.stop(it) }
         }
 
@@ -345,10 +348,12 @@ class PortsipConnectionService : ConnectionService() {
             synchronized(connectionLock) {
                 sessionToConnection[sessionId]?.let { connection ->
                     connection.setActive()
-                    if (notificationConnectedAt == 0L) {
-                        notificationConnectedAt = System.currentTimeMillis()
-                    }
                     connection.callerDisplayName?.let { notificationName = it }
+                    // First leg connecting brings up the notification; its timer
+                    // base is stamped once so later legs don't restart it.
+                    if (notificationStartedAt == 0L) {
+                        notificationStartedAt = System.currentTimeMillis()
+                    }
                     showCallNotification()
                     PortsipLogger.d(COMPONENT, "Call connected for session $sessionId")
                 }
@@ -823,8 +828,13 @@ class PortsipConnectionService : ConnectionService() {
             registerConnection(sessionId, connection)
         }
 
+        // Notification (and its foreground-service protection) runs from dial
+        // time, like the system dialer — the timer base is stamped once per
+        // call, so it includes ring time and later legs don't restart it.
         notificationName = displayName ?: callee
-        notificationConnectedAt = 0L
+        if (notificationStartedAt == 0L) {
+            notificationStartedAt = System.currentTimeMillis()
+        }
         showCallNotification()
 
         return connection
