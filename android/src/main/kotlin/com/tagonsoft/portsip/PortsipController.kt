@@ -526,10 +526,9 @@ class PortsipController private constructor() : OnPortSIPEvent {
 
     /**
      * Ends one leg and resumes another. The ended leg's Connection is destroyed
-     * (mirrors hangUp) — leaving it alive keeps a phantom call in Telecom and
-     * audio-route changes can target the dead Connection instead of the survivor.
-     * Resuming renegotiates media, so the reconfiguration window is opened to
-     * preserve the user's audio route (see beginAudioReconfiguration).
+     * — left alive it's a phantom call whose dead Connection can swallow
+     * audio-route changes. The reconfiguration window preserves the user's
+     * route across the resume (see beginAudioReconfiguration).
      */
     fun endCallAndResume(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val endSessionId = (arguments["endSessionId"] as? Number)?.toLong() ?: -1L
@@ -809,11 +808,9 @@ class PortsipController private constructor() : OnPortSIPEvent {
     fun handleConnectionServiceHold(sessionId: Long, onHold: Boolean) {
         synchronized(sdkLock) {
             PortsipLogger.d(COMPONENT, "ConnectionService hold for session $sessionId: $onHold")
-            // Telecom allows one active call per phone account, so activating one
-            // leg makes it hold the other. While the audio conference is up every
-            // joined leg must keep streaming — an SDK hold turns that leg sendonly
-            // and starves the mixer — so Telecom's juggling stays Connection-state
-            // only.
+            // While the conference is up, Telecom's one-active-call juggling must
+            // stay Connection-state only: an SDK hold turns a joined leg sendonly
+            // and starves the mixer.
             if (audioConferenceActive) {
                 PortsipLogger.d(COMPONENT, "conference active — not forwarding hold to SDK")
                 return

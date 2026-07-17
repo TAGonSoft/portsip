@@ -132,12 +132,10 @@ class PortsipController: NSObject {
         }
     }
 
-    /// PlayAndRecord + voiceChat with the Bluetooth category options the system
-    /// in-call UI requires: without allowBluetooth/allowBluetoothA2DP the CallKit
-    /// speaker button routes audio but its selected state snaps back. Category
-    /// and mode are set in SEPARATE calls (the combined setCategory(_:mode:options:)
-    /// itself breaks the button) and the options are re-applied afterwards
-    /// (setMode can silently strip them).
+    /// PlayAndRecord + voiceChat with allowBluetooth/allowBluetoothA2DP —
+    /// without them the CallKit speaker button's selected state snaps back.
+    /// Category and mode go in SEPARATE calls (the combined overload breaks the
+    /// button); the options are re-applied after setMode, which can strip them.
     static func applyCallSessionConfiguration() throws {
         let session = AVAudioSession.sharedInstance()
         let options: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP]
@@ -560,11 +558,10 @@ class PortsipController: NSObject {
             // Only prepare audio and report to CallKit if call succeeded
             if sessionId > 0 {
                 if PortsipCallKitProvider.shared.isCallKitEnabled {
-                    // SDK CallKit contract: configureAudioSession at call
-                    // start; the engine itself starts ONLY in didActivate.
-                    // Starting it here (pre-activation) makes the SDK
-                    // reconfigure the session in delayed waves that keep
-                    // clearing the user's route override mid-call.
+                    // SDK CallKit contract: configure the session at call
+                    // start; the engine starts only in didActivate. Starting it
+                    // pre-activation triggers delayed reconfigurations that
+                    // keep clearing the route override mid-call.
                     _ = portSIPSDK.configureAudioSession()
                 } else {
                     portSIPSDK.startAudio(AVAudioSession.sharedInstance())
@@ -860,10 +857,9 @@ class PortsipController: NSObject {
         PortsipCallKitProvider.shared.noteUserSpeakerChoice(enable)
 
         if PortsipCallKitProvider.shared.isCallKitEnabled {
-            // With CallKit active, route via a session-level override. The SDK's
-            // setLoudspeakerStatus flips the category options (.defaultToSpeaker)
-            // instead, which the system in-call UI cannot track or undo — its
-            // speaker button shows stale state or stops responding entirely.
+            // Route via a session-level override: the SDK's setLoudspeakerStatus
+            // flips .defaultToSpeaker instead, which the system in-call UI
+            // can't track — its speaker button goes stale or unresponsive.
             do {
                 try AVAudioSession.sharedInstance()
                     .overrideOutputAudioPort(enable ? .speaker : .none)

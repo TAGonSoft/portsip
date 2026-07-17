@@ -444,11 +444,9 @@ class PortsipConnectionService : ConnectionService() {
         }
 
         // --- Telecom is the single owner of Android audio routing -------------
-        // The self-managed Connection owns the route (earpiece/speaker/BT/headset).
-        // Resuming a leg (swap/merge/unhold) makes Telecom reset to the earpiece and
-        // fire onCallAudioStateChanged(EARPIECE); mirroring that blindly would drop
-        // the route the user picked. So we track the user's intended route and, during
-        // the reconfiguration window those ops open, re-assert it through Telecom.
+        // Resuming a leg makes Telecom reset the route to the earpiece; we track
+        // the user's intended route and, during the reconfiguration window those
+        // ops open, re-assert it through Telecom instead of mirroring the reset.
 
         val ROUTE_EARPIECE = CallAudioState.ROUTE_EARPIECE
         val ROUTE_SPEAKER = CallAudioState.ROUTE_SPEAKER
@@ -525,10 +523,8 @@ class PortsipConnectionService : ConnectionService() {
 
         /**
          * Physically applies an audio route via AudioManager.setCommunicationDevice
-         * (API 31+) — the modern call that works for every output, including USB
-         * headsets and forcing the speaker while a headset is plugged in (both of
-         * which the SDK's AppRTC won't do). This is the single physical router; we
-         * don't lean on the SDK's setAudioDevice (it refused speaker-with-headset).
+         * (API 31+) — the single physical router. Unlike the SDK's setAudioDevice,
+         * it handles USB headsets and forces the speaker with a headset plugged in.
          */
         fun routeToDevice(context: Context, route: Int) {
             // A new request invalidates any retries still pending for an old one.
@@ -540,21 +536,18 @@ class PortsipConnectionService : ConnectionService() {
         @Volatile
         private var routeToDeviceGeneration = 0
 
-        /** The device type of this app's outstanding setCommunicationDevice request,
-         *  or null when none. The audio policy keeps a client's request active until
-         *  it is replaced or cleared — leaving a stale one (e.g. speaker) pinned
-         *  yanks audio off a route the system moved to (e.g. Bluetooth) moments
-         *  after it connects. */
+        /** The device type of this app's outstanding setCommunicationDevice
+         *  request, or null when none. A stale request stays pinned in the audio
+         *  policy and yanks audio off a route the system later moves to. */
         @Volatile
         private var requestedCommDeviceType: Int? = null
 
         private fun routeToDeviceAttempt(context: Context, route: Int, attempt: Int, gen: Int) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
             val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-            // Telecom's BluetoothRouteManager owns the SCO/BLE link. Pinning our own
-            // communication-device request on top of it fights the Bluetooth stack
-            // (audio drops when the link renegotiates), so for Bluetooth just drop
-            // any request we hold and let the active SCO link carry the call.
+            // Telecom's BluetoothRouteManager owns the SCO/BLE link — pinning our
+            // own request over it drops audio when the link renegotiates. Just
+            // withdraw any request we hold and let the SCO link carry the call.
             if (route == ROUTE_BLUETOOTH) {
                 clearCommDeviceRequest(am)
                 return
@@ -570,10 +563,9 @@ class PortsipConnectionService : ConnectionService() {
             }
             val device = am.availableCommunicationDevices.firstOrNull { it.type in types }
             if (device == null) {
-                // A headset that just connected may not be listed yet — Telecom
-                // reports the route before the device appears in
-                // availableCommunicationDevices. Retry briefly instead of giving up,
-                // or the call stays physically on the previous output.
+                // A just-connected headset may not be listed yet (Telecom reports
+                // the route first) — retry briefly or the call stays on the
+                // previous output.
                 if (attempt < 10) {
                     PortsipLogger.d(
                         COMPONENT,
@@ -589,11 +581,10 @@ class PortsipConnectionService : ConnectionService() {
                 }
                 return
             }
-            // Skip only when OUR request already points there — Telecom re-emits the
-            // audio state repeatedly while a route is held and re-applying the same
-            // request churns the output. The system merely being on the right device
-            // isn't enough: a stale request for another output would still pull
-            // audio away once the policy re-evaluates.
+            // Skip only when OUR request already points there — re-applying churns
+            // the output, but the system merely being on the right device isn't
+            // enough (a stale request for another output would still pull audio
+            // away once the policy re-evaluates).
             if (requestedCommDeviceType == device.type &&
                 am.communicationDevice?.type == device.type
             ) {
@@ -632,10 +623,8 @@ class PortsipConnectionService : ConnectionService() {
             }
             val mask = state.supportedRouteMask
             val ports = mutableListOf<Map<String, Any>>()
-            // A wired headset replaces the earpiece (Android drops EARPIECE from the
-            // mask while one is plugged) — show the headset in its place; Speaker
-            // (and BT) stay selectable, and routeToDevice forces them even with the
-            // headset connected.
+            // A wired headset replaces the earpiece (Android drops EARPIECE from
+            // the mask while one is plugged) — show the headset in its place.
             if (mask and ROUTE_WIRED_HEADSET != 0) {
                 ports.add(port(ROUTE_WIRED_HEADSET))
             } else if (mask and ROUTE_EARPIECE != 0) {

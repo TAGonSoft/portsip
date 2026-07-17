@@ -69,25 +69,20 @@ class PortsipCallKitProvider: NSObject {
     /// One-shot: a Bluetooth revive bounce is in flight (see performBluetoothRevive).
     private var bluetoothRevivePending = false
 
-    /// Category options observed at the previous route event. A user route
-    /// action (system button, in-app pick, session override) never rewrites
-    /// the category options; the SDK's engine reconfigurations always do —
-    /// this is what tells the two apart when both land on the receiver.
+    /// Category options at the previous route event. User route actions never
+    /// rewrite the options; the engine's reconfigurations do — that fingerprint
+    /// tells them apart when both land on the receiver.
     private var lastCategoryOpts: UInt = 0
 
-    /// One-shot: the engine performs an identical-value session config right
-    /// after a call is answered and right after a session activation, which
-    /// clears an active override WITHOUT any observable fingerprint. Set at
-    /// onInviteAnswered / didActivate, consumed by the very next route event —
-    /// if that event stole the speaker, it's restored.
+    /// One-shot: right after answer/activation the engine performs a session
+    /// config that clears an active override with no observable fingerprint.
+    /// Armed at onInviteAnswered/didActivate, consumed by the next route event.
     private var answerResetPending = false
 
-    /// The user's speaker choice — the restore machinery's ONLY basis. Written
-    /// exclusively by unambiguous user signals: the plugin's loudspeaker API
-    /// (in-app button), .override route events (system-button picks), and
-    /// fingerprint-less receiver-landings (system-button OFF). The engine's own
-    /// route flips (categoryChange to Speaker during merges, etc.) never touch
-    /// it, so a restore can never re-assert something the user turned off.
+    /// The user's speaker choice — the restore machinery's only basis. Written
+    /// solely by user signals (loudspeaker API, .override route events,
+    /// fingerprint-less receiver landings), never by the engine's route flips,
+    /// so a restore can't re-assert something the user turned off.
     private var userWantsSpeaker = false
 
     /// Prevents recursive audio route change handling
@@ -976,27 +971,18 @@ extension PortsipCallKitProvider: CXProviderDelegate {
             return
         }
 
-        // The SDK reconfigures the session asynchronously after startAudio and
-        // strips the Bluetooth category options the system in-call UI requires
-        // (without them the CallKit speaker button routes audio but its selected
-        // state snaps back). Re-ensure them here — convergent: once the options
-        // are in place this is a no-op, so no notification ping-pong.
+        // The SDK's async reconfigurations after startAudio strip the Bluetooth
+        // category options the system in-call UI requires — re-ensure them
+        // (no-op once in place, so no notification ping-pong).
         if hasActiveCalls {
             PortsipController.ensureCallSessionConfiguration()
         }
 
-        // Speaker re-assertion across answer/hold/swap/merge, WITHOUT ever
-        // fighting the user. Two signatures identify an engine/session
-        // reconfiguration stealing the route (user route actions produce
-        // neither):
-        //  1. the event arrives together with a category-options rewrite
-        //     (any setCategory clears an active override), or
-        //  2. the event lands while the options are still in the engine's
-        //     stripped state (missing the required Bluetooth options) — user
-        //     taps can't occur there because the options are re-ensured within
-        //     the same event chain.
-        // A receiver-landing with either signature while the speaker was on is
-        // restored; every other receiver-landing is honored as a user action.
+        // Restore the speaker when an engine/session reconfiguration steals the
+        // route across answer/hold/swap/merge. Engine steals carry a fingerprint
+        // user actions never produce: a category-options rewrite, options still
+        // in the engine's stripped state, or the armed answer-reset. Any other
+        // receiver-landing is honored as a user action.
         let sessionConfigured = AVAudioSession.CategoryOptions(rawValue: currentOpts)
             .contains([.allowBluetooth, .allowBluetoothA2DP])
         let engineSteal = optsChanged || !sessionConfigured || answerReset
@@ -1006,21 +992,15 @@ extension PortsipCallKitProvider: CXProviderDelegate {
                 "restoring speaker after engine config rewrite"
             )
             try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
-            // The user's choice is untouched through the dip so a follow-up
-            // rewrite in the same wave train is also restored; skip notifying
-            // Flutter about a state we just corrected.
+            // Keep the choice intact so a follow-up rewrite is also restored;
+            // don't notify Flutter about a state we just corrected.
             return
         }
 
-        // Update the user's recorded choice — from user signals only:
-        //  • .override route events are explicit picks (system button ON,
-        //    in-app picks, and our own restores — which re-record the same
-        //    value, harmless);
-        //  • a fingerprint-less receiver-landing is the system button's OFF.
-        // Engine flips (e.g. a categoryChange landing ON the speaker during a
-        // merge) match neither and never corrupt the choice.
-        // Only while a call exists — a trailing teardown event must not
-        // re-arm the choice and leak it into the next call.
+        // Record the user's choice from user signals only: .override events are
+        // explicit picks; a fingerprint-less receiver-landing is the system
+        // button's OFF. Engine flips match neither. Only while a call exists,
+        // so a teardown event can't leak the choice into the next call.
         if hasActiveCalls {
             if !hasExternalOutput {
                 if reason == .override {
