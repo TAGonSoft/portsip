@@ -619,6 +619,13 @@ class Portsip {
   ///
   /// [appName] - The app name to display in the system call UI
   /// [canUseConnectionService] - Whether to enable ConnectionService integration (default: true)
+  /// [showCallNotification] - Whether to post the ongoing-call notification
+  /// (status-bar chip, timer, Hang up action) from a foreground service while
+  /// a call is active (default: true)
+  /// [notificationColor] - ARGB color (e.g. 0xFFFF2F00) used to colorize the
+  /// call notification with the app's brand color
+  /// [notificationIcon] - Name of a drawable/mipmap resource in the app to use
+  /// as the notification small icon (monochrome; defaults to a phone glyph)
   ///
   /// This method should be called after initialize() to enable native call UI on Android.
   /// On iOS, this method does nothing (use configureCallKit instead).
@@ -629,11 +636,17 @@ class Portsip {
   Future<int> configureConnectionService({
     required String appName,
     bool canUseConnectionService = true,
+    bool showCallNotification = true,
+    int? notificationColor,
+    String? notificationIcon,
   }) async {
     _checkInitialized();
     return await PortsipPlatform.instance.configureConnectionService(
       appName: appName,
       canUseConnectionService: canUseConnectionService,
+      showCallNotification: showCallNotification,
+      notificationColor: notificationColor,
+      notificationIcon: notificationIcon,
     );
   }
 

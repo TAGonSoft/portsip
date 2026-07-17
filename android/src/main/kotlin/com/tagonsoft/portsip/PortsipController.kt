@@ -769,8 +769,15 @@ class PortsipController private constructor() : OnPortSIPEvent {
         val ctx = context ?: return -1
         val appName = (arguments["appName"] as? String) ?: "PortSIP"
         val canUseConnectionService = (arguments["canUseConnectionService"] as? Boolean) ?: true
+        val showCallNotification = (arguments["showCallNotification"] as? Boolean) ?: true
+        // ARGB colors exceed Int32 and arrive as Long over the channel.
+        val notificationColor = (arguments["notificationColor"] as? Number)?.toInt()
+        val notificationIcon = arguments["notificationIcon"] as? String
 
-        PortsipConnectionService.configure(ctx, appName, canUseConnectionService)
+        PortsipConnectionService.configure(
+            ctx, appName, canUseConnectionService,
+            showCallNotification, notificationColor, notificationIcon
+        )
         PortsipLogger.d(COMPONENT, "ConnectionService configured: appName=$appName, enabled=$canUseConnectionService")
         return 0
     }

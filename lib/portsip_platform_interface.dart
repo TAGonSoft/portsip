@@ -364,11 +364,17 @@ abstract class PortsipPlatform extends PlatformInterface {
   /// Parameters:
   /// - [appName]: The app name to display in the system call UI
   /// - [canUseConnectionService]: Whether to enable ConnectionService (default: true)
+  /// - [showCallNotification]: Whether to post the ongoing-call notification (default: true)
+  /// - [notificationColor]: ARGB brand color for the call notification
+  /// - [notificationIcon]: App drawable/mipmap resource name for the small icon
   ///
   /// Returns 0 on success, negative error code on failure.
   Future<int> configureConnectionService({
     required String appName,
     bool canUseConnectionService = true,
+    bool showCallNotification = true,
+    int? notificationColor,
+    String? notificationIcon,
   }) async {
     throw UnimplementedError('configureConnectionService has not been implemented.');
   }

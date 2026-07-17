@@ -60,6 +60,9 @@ android {
         // add the AAR as an implementation dependency in their own build.gradle.
         compileOnly(name: 'portsipvoipsdk', ext: 'aar')
 
+        // NotificationCompat.CallStyle for the ongoing-call notification
+        implementation("androidx.core:core:1.13.1")
+
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.mockito:mockito-core:5.0.0")
     }

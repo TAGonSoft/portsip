@@ -77,6 +77,44 @@ class PortsipConnectionService : ConnectionService() {
         @Volatile
         private var appName: String = "PortSIP"
 
+        /** Application context captured at configure() for notification control */
+        @Volatile
+        private var appContext: Context? = null
+
+        // Ongoing-call notification state (see PortsipCallService)
+        @Volatile
+        private var notificationName: String = ""
+
+        /** Epoch ms the current call connected, 0 while dialing */
+        @Volatile
+        private var notificationConnectedAt: Long = 0L
+
+        /** Whether the ongoing-call notification is enabled (configure()) */
+        @Volatile
+        private var notificationEnabled = true
+
+        /** App brand ARGB color for the notification, or null for default */
+        @Volatile
+        var notificationColor: Int? = null
+            private set
+
+        /** Resolved small-icon resource, 0 → plugin's default glyph */
+        @Volatile
+        var notificationIconRes: Int = 0
+            private set
+
+        private fun showCallNotification() {
+            if (!notificationEnabled) return
+            val context = appContext ?: return
+            PortsipCallService.show(context, notificationName, notificationConnectedAt)
+        }
+
+        private fun stopCallNotification() {
+            notificationName = ""
+            notificationConnectedAt = 0L
+            appContext?.let { PortsipCallService.stop(it) }
+        }
+
         /**
          * Configures the ConnectionService with app settings.
          * Must be called before enabling the service.
@@ -84,9 +122,32 @@ class PortsipConnectionService : ConnectionService() {
          * @param context Application context
          * @param appName App name to display in call UI
          * @param canUseConnectionService Whether to enable ConnectionService
+         * @param showCallNotification Whether to post the ongoing-call notification
+         * @param notificationColor ARGB brand color for the notification, or null
+         * @param notificationIcon App drawable/mipmap resource name for the small icon
          */
-        fun configure(context: Context, appName: String, canUseConnectionService: Boolean = true) {
+        fun configure(
+            context: Context,
+            appName: String,
+            canUseConnectionService: Boolean = true,
+            showCallNotification: Boolean = true,
+            notificationColor: Int? = null,
+            notificationIcon: String? = null
+        ) {
             this.appName = appName
+            this.appContext = context.applicationContext
+            this.notificationEnabled = showCallNotification
+            this.notificationColor = notificationColor
+            this.notificationIconRes = notificationIcon?.let { name ->
+                val res = context.resources
+                val id = res.getIdentifier(name, "drawable", context.packageName)
+                    .takeIf { it != 0 }
+                    ?: res.getIdentifier(name, "mipmap", context.packageName)
+                if (id == 0) {
+                    PortsipLogger.w(COMPONENT, "Notification icon '$name' not found, using default")
+                }
+                id
+            } ?: 0
 
             if (!canUseConnectionService) {
                 disable(context)
@@ -151,6 +212,7 @@ class PortsipConnectionService : ConnectionService() {
          */
         private fun disable(context: Context) {
             isEnabled = false
+            stopCallNotification()
 
             // End all active calls
             synchronized(connectionLock) {
@@ -283,6 +345,11 @@ class PortsipConnectionService : ConnectionService() {
             synchronized(connectionLock) {
                 sessionToConnection[sessionId]?.let { connection ->
                     connection.setActive()
+                    if (notificationConnectedAt == 0L) {
+                        notificationConnectedAt = System.currentTimeMillis()
+                    }
+                    connection.callerDisplayName?.let { notificationName = it }
+                    showCallNotification()
                     PortsipLogger.d(COMPONENT, "Call connected for session $sessionId")
                 }
             }
@@ -308,9 +375,33 @@ class PortsipConnectionService : ConnectionService() {
                     if (sessionToConnection.isEmpty()) {
                         desiredRoute = ROUTE_EARPIECE
                         clearCommDeviceRequest(null)
+                        stopCallNotification()
                     }
                     PortsipLogger.d(COMPONENT, "Call ended for session $sessionId with reason $reason")
                 }
+            }
+        }
+
+        /**
+         * Ends every live call — backs the ongoing-call notification's Hang up
+         * action, which has a single button for the whole call. Mirrors
+         * [PortsipConnection.onDisconnect]: hang up the SIP session, disconnect
+         * the system call, then emit the end-call event so the app tears down
+         * its UI (and any conference legs) through its normal path.
+         */
+        fun endAllCallsFromNotification() {
+            val live = synchronized(connectionLock) {
+                sessionToConnection
+                    .filterValues { it.state != Connection.STATE_DISCONNECTED }
+                    .keys.toList()
+            }
+            live.forEach { sessionId ->
+                PortsipController.shared.handleConnectionServiceEndCall(sessionId)
+                reportCallEnded(sessionId, DisconnectCause.LOCAL)
+                PortsipEventBridge.shared.sendEvent(
+                    "onConnectionServiceEndCall",
+                    mapOf(PortsipConstants.EventKeys.SESSION_ID to sessionId)
+                )
             }
         }
 
@@ -396,6 +487,8 @@ class PortsipConnectionService : ConnectionService() {
                 sessionToConnection[sessionId]?.setCallerDisplayName(
                     displayName, TelecomManager.PRESENTATION_ALLOWED
                 )
+                notificationName = displayName
+                showCallNotification()
             }
         }
 
@@ -673,6 +766,7 @@ class PortsipConnectionService : ConnectionService() {
             synchronized(phoneAccountLock) {
                 phoneAccountHandle = null
             }
+            appContext = null
             lastSpeakerState = null
             desiredRoute = ROUTE_EARPIECE
             audioReconfiguring = false
@@ -728,6 +822,10 @@ class PortsipConnectionService : ConnectionService() {
         if (sessionId > 0) {
             registerConnection(sessionId, connection)
         }
+
+        notificationName = displayName ?: callee
+        notificationConnectedAt = 0L
+        showCallNotification()
 
         return connection
     }

@@ -668,10 +668,16 @@ class MethodChannelPortsip extends PortsipPlatform {
   Future<int> configureConnectionService({
     required String appName,
     bool canUseConnectionService = true,
+    bool showCallNotification = true,
+    int? notificationColor,
+    String? notificationIcon,
   }) async {
     final args = {
       'appName': appName,
       'canUseConnectionService': canUseConnectionService,
+      'showCallNotification': showCallNotification,
+      'notificationColor': notificationColor,
+      'notificationIcon': notificationIcon,
     };
     _logCall('configureConnectionService', args);
     try {
