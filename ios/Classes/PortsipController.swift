@@ -218,9 +218,7 @@ class PortsipController: NSObject {
     /// TCP and TLS transports are more battery efficient than UDP for background operation.
     @objc private func appDidEnterBackground() {
         sdkQueue.async { [weak self] in
-            // Keep SIP alive in background to receive calls
-            // TCP and TLS are more battery efficient than UDP for background
-            self?.portSIPSDK.startKeepAwake()
+            self?._portSIPSDK?.startKeepAwake()
         }
     }
 
@@ -228,8 +226,7 @@ class PortsipController: NSObject {
     /// Stops SIP keep-alive as it's no longer needed when app is active.
     @objc private func appWillEnterForeground() {
         sdkQueue.async { [weak self] in
-            // Stop keep alive when returning to foreground
-            self?.portSIPSDK.stopKeepAwake()
+            self?._portSIPSDK?.stopKeepAwake()
         }
     }
     
@@ -1125,6 +1122,7 @@ class PortsipController: NSObject {
         sdkQueue.sync {
             conferenceJoinedSessions.removeAll()
             if let sdk = _portSIPSDK {
+                sdk.stopKeepAwake()
                 sdk.unRegisterServer(0)
                 sdk.unInitialize()
                 sdk.delegate = nil
@@ -1150,6 +1148,7 @@ class PortsipController: NSObject {
 
             // Unregister and uninitialize SDK
             if let sdk = _portSIPSDK {
+                sdk.stopKeepAwake()
                 sdk.unRegisterServer(0)
                 sdk.unInitialize()
                 sdk.delegate = nil
