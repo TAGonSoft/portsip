@@ -626,6 +626,8 @@ class Portsip {
   /// call notification with the app's brand color
   /// [notificationIcon] - Name of a drawable/mipmap resource in the app to use
   /// as the notification small icon (monochrome; defaults to a phone glyph)
+  /// [connectingText] - Status line shown on the notification while the call is
+  /// ringing, before it's answered and the timer starts (defaults to "Calling…")
   ///
   /// This method should be called after initialize() to enable native call UI on Android.
   /// On iOS, this method does nothing (use configureCallKit instead).
@@ -639,6 +641,7 @@ class Portsip {
     bool showCallNotification = true,
     int? notificationColor,
     String? notificationIcon,
+    String? connectingText,
   }) async {
     _checkInitialized();
     return await PortsipPlatform.instance.configureConnectionService(
@@ -647,6 +650,7 @@ class Portsip {
       showCallNotification: showCallNotification,
       notificationColor: notificationColor,
       notificationIcon: notificationIcon,
+      connectingText: connectingText,
     );
   }
 

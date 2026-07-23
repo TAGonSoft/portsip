@@ -671,6 +671,7 @@ class MethodChannelPortsip extends PortsipPlatform {
     bool showCallNotification = true,
     int? notificationColor,
     String? notificationIcon,
+    String? connectingText,
   }) async {
     final args = {
       'appName': appName,
@@ -678,6 +679,7 @@ class MethodChannelPortsip extends PortsipPlatform {
       'showCallNotification': showCallNotification,
       'notificationColor': notificationColor,
       'notificationIcon': notificationIcon,
+      'connectingText': connectingText,
     };
     _logCall('configureConnectionService', args);
     try {

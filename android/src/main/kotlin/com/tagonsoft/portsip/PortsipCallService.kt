@@ -31,18 +31,24 @@ class PortsipCallService : Service() {
         private const val ACTION_HANG_UP = "com.tagonsoft.portsip.HANG_UP"
         private const val EXTRA_DISPLAY_NAME = "displayName"
         private const val EXTRA_STARTED_AT = "startedAt"
+        private const val EXTRA_CONNECTING_TEXT = "connectingText"
+
+        private const val DEFAULT_CONNECTING_TEXT = "Calling…"
 
         /**
          * Shows (or updates) the ongoing-call notification.
          *
          * @param displayName Name shown on the notification
-         * @param startedAt Epoch ms the call started (dial time)
+         * @param startedAt Epoch ms the call was answered — 0 while it's still
+         *   ringing, in which case [connectingText] shows instead of a timer
+         * @param connectingText Status line shown while ringing (e.g. "Calling…")
          */
-        fun show(context: Context, displayName: String, startedAt: Long) {
+        fun show(context: Context, displayName: String, startedAt: Long, connectingText: String) {
             val intent = Intent(context, PortsipCallService::class.java)
                 .setAction(ACTION_SHOW)
                 .putExtra(EXTRA_DISPLAY_NAME, displayName)
                 .putExtra(EXTRA_STARTED_AT, startedAt)
+                .putExtra(EXTRA_CONNECTING_TEXT, connectingText)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
@@ -78,18 +84,20 @@ class PortsipCallService : Service() {
         }
         val name = intent?.getStringExtra(EXTRA_DISPLAY_NAME).orEmpty().ifEmpty { "Call" }
         val startedAt = intent?.getLongExtra(EXTRA_STARTED_AT, 0L) ?: 0L
+        val connectingText = intent?.getStringExtra(EXTRA_CONNECTING_TEXT)
+            .orEmpty().ifEmpty { DEFAULT_CONNECTING_TEXT }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
         } else {
             0
         }
         ServiceCompat.startForeground(
-            this, NOTIFICATION_ID, buildNotification(name, startedAt), type
+            this, NOTIFICATION_ID, buildNotification(name, startedAt, connectingText), type
         )
         return START_NOT_STICKY
     }
 
-    private fun buildNotification(name: String, startedAt: Long): Notification {
+    private fun buildNotification(name: String, startedAt: Long, connectingText: String): Notification {
         ensureChannel()
         val hangUp = PendingIntent.getService(
             this,
@@ -111,15 +119,22 @@ class PortsipCallService : Service() {
             builder.setColor(color)
         }
         // CallStyle from dial to hang-up: it's the only template with the native
-        // Hang up button and avatar. Its chronometer ticks regardless, so the
-        // timer runs from `startedAt` (dial time, stamped once, never reset) —
-        // same behavior as the system dialer's call notification.
+        // Hang up button and avatar. While ringing (startedAt == 0) we show the
+        // connecting status instead of a timer; once answered the chronometer
+        // runs from the answer moment — same as WhatsApp / the system dialer.
         val person = Person.Builder().setName(name).setImportant(true).build()
-        builder
-            .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, hangUp))
-            .setWhen(startedAt)
-            .setShowWhen(true)
-            .setUsesChronometer(true)
+        builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(person, hangUp))
+        if (startedAt > 0L) {
+            builder
+                .setWhen(startedAt)
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+        } else {
+            builder
+                .setUsesChronometer(false)
+                .setShowWhen(false)
+                .setContentText(connectingText)
+        }
         packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
             builder.setContentIntent(
                 PendingIntent.getActivity(

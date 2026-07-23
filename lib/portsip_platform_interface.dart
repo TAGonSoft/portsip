@@ -367,6 +367,7 @@ abstract class PortsipPlatform extends PlatformInterface {
   /// - [showCallNotification]: Whether to post the ongoing-call notification (default: true)
   /// - [notificationColor]: ARGB brand color for the call notification
   /// - [notificationIcon]: App drawable/mipmap resource name for the small icon
+  /// - [connectingText]: Status line shown while ringing (default: "Calling…")
   ///
   /// Returns 0 on success, negative error code on failure.
   Future<int> configureConnectionService({
@@ -375,6 +376,7 @@ abstract class PortsipPlatform extends PlatformInterface {
     bool showCallNotification = true,
     int? notificationColor,
     String? notificationIcon,
+    String? connectingText,
   }) async {
     throw UnimplementedError('configureConnectionService has not been implemented.');
   }
