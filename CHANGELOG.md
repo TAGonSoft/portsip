@@ -1,3 +1,15 @@
+## 0.1.3
+
+* **Fix (iOS)**: `startKeepAwake` no longer outlives the SDK. Both teardown
+paths now call `stopKeepAwake()` before `unInitialize()`, so a keep-awake
+started on background can't leave a background assertion running on a disposed
+SDK instance.
+* **Fix (iOS)**: background/foreground transitions no longer recreate a
+torn-down SDK. The `appDidEnterBackground` / `appWillEnterForeground` handlers
+now toggle keep-awake through the backing SDK reference and no-op when the SDK
+isn't initialized, instead of lazily spinning up a fresh, unconfigured
+instance.
+
 ## 0.1.2
 
 * **Feature (Android)**: Telecom-owned audio routing. Adds

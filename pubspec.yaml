@@ -1,6 +1,6 @@
 name: portsip
 description: "A Flutter plugin for integrating the PortSIP VoIP SDK, enabling SIP-based voice and video communications in your applications."
-version: 0.1.2
+version: 0.1.3
 repository: https://github.com/TAGonSoft/portsip
 
 environment:
