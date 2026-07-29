@@ -702,6 +702,82 @@ class PortsipController: NSObject {
         }
     }
 
+    /// Starts recording a session to a file.
+    ///
+    /// Recording is per session: the SDK has no conference-level recorder, so a
+    /// conference is recorded by starting one recording per leg.
+    /// - Parameter arguments: Dictionary containing sessionId, recordFilePath,
+    ///   recordFileName, appendTimeStamp, audioChannels, fileFormat,
+    ///   audioRecordMode and videoRecordMode.
+    /// - Returns: 0 on success, error code otherwise.
+    func startRecord(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            guard let recordFilePath = arguments["recordFilePath"] as? String,
+                  let recordFileName = arguments["recordFileName"] as? String else {
+                return -1
+            }
+            let appendTimeStamp = arguments["appendTimeStamp"] as? Bool ?? false
+            let audioChannels = Int32(arguments["audioChannels"] as? Int ?? 1)
+            let fileFormat = FILE_FORMAT(rawValue: UInt32(arguments["fileFormat"] as? Int ?? 1))
+            let audioRecordMode = RECORD_MODE(rawValue: UInt32(arguments["audioRecordMode"] as? Int ?? 3))
+            let videoRecordMode = RECORD_MODE(rawValue: UInt32(arguments["videoRecordMode"] as? Int ?? 0))
+
+            return Int(portSIPSDK.startRecord(
+                Int(sessionId),
+                recordFilePath: recordFilePath,
+                recordFileName: recordFileName,
+                appendTimeStamp: appendTimeStamp,
+                channels: audioChannels,
+                fileFormat: fileFormat,
+                audioRecord: audioRecordMode,
+                videoRecord: videoRecordMode
+            ))
+        }
+    }
+
+    /// Stops the recording running on a session.
+    /// - Parameter arguments: Dictionary containing the sessionId.
+    /// - Returns: 0 on success, error code otherwise.
+    func stopRecord(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            return Int(portSIPSDK.stopRecord(Int(sessionId)))
+        }
+    }
+
+    /// Plays a file into the stream sent to the remote party.
+    /// - Parameter arguments: Dictionary containing sessionId, fileUrl, loop
+    ///   and playAudio (0 = don't play file audio, 1 = file audio only,
+    ///   2 = file audio mixed with the microphone).
+    /// - Returns: 0 on success, error code otherwise.
+    func startPlayingFileToRemote(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            guard let fileUrl = arguments["fileUrl"] as? String else { return -1 }
+            let loop = arguments["loop"] as? Bool ?? false
+            let playAudio = Int32(arguments["playAudio"] as? Int ?? 2)
+
+            // Swift renames the selector: startPlayingFile(toRemote:…).
+            return Int(portSIPSDK.startPlayingFile(
+                toRemote: Int(sessionId),
+                fileUrl: fileUrl,
+                loop: loop,
+                playAudio: playAudio
+            ))
+        }
+    }
+
+    /// Stops the file playback running on a session.
+    /// - Parameter arguments: Dictionary containing the sessionId.
+    /// - Returns: 0 on success, error code otherwise.
+    func stopPlayingFileToRemote(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            return Int(portSIPSDK.stopPlayingFile(toRemote: Int(sessionId)))
+        }
+    }
+
     /// Resumes a call that was on hold.
     /// - Parameter arguments: Dictionary containing:
     ///   - sessionId: The session ID of the call to unhold

@@ -73,6 +73,18 @@ enum PortsipMethodCall: String {
     /// Requests RTP media statistics for a session (result via onStatistics event)
     case getStatistics = "getStatistics"
 
+    /// Starts recording the call on a session
+    case startRecord = "startRecord"
+
+    /// Stops the recording running on a session
+    case stopRecord = "stopRecord"
+
+    /// Plays a file into the stream sent to the remote party
+    case startPlayingFileToRemote = "startPlayingFileToRemote"
+
+    /// Stops the file playback running on a session
+    case stopPlayingFileToRemote = "stopPlayingFileToRemote"
+
     // MARK: - CallKit Methods
     
     /// Configures CallKit provider with app name and settings

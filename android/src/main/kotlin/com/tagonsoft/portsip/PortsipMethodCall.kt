@@ -80,6 +80,18 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Requests RTP media statistics for a session (result via onStatistics event) */
     GET_STATISTICS("getStatistics"),
 
+    /** Starts recording the call on a session */
+    START_RECORD("startRecord"),
+
+    /** Stops the recording running on a session */
+    STOP_RECORD("stopRecord"),
+
+    /** Plays a file into the stream sent to the remote party */
+    START_PLAYING_FILE_TO_REMOTE("startPlayingFileToRemote"),
+
+    /** Stops the file playback running on a session */
+    STOP_PLAYING_FILE_TO_REMOTE("stopPlayingFileToRemote"),
+
     /** Sets the PortSIP license key */
     SET_LICENSE_KEY("setLicenseKey"),
 
