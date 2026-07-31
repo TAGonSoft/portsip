@@ -1,3 +1,18 @@
+## 0.1.4
+
+* **Feature**: call recording. `startRecord({sessionId, recordFilePath,
+recordFileName, appendTimeStamp, audioChannels, fileFormat, audioRecordMode,
+videoRecordMode})` and `stopRecord({sessionId})`, wired on both iOS and
+Android. `recordFilePath` must be an existing directory — the SDK does not
+create it. New [PortsipRecordFileFormat] (`wave | amr | mp3 | mp4`) and
+[PortsipRecordMode] (`none | receive | send | both`) enums carry the SDK's
+values.
+* **Feature**: play a file to the remote party.
+`startPlayingFileToRemote({sessionId, fileUrl, loop, playAudio})` and
+`stopPlayingFileToRemote({sessionId})`, wired on both iOS and Android. The new
+[PortsipPlayFileAudioMode] enum (`none | fileOnly | mixedWithMicrophone`)
+controls how the file mixes with the microphone;
+
 ## 0.1.3
 
 * **Fix (iOS)**: `startKeepAwake` no longer outlives the SDK. Both teardown
