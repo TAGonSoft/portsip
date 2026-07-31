@@ -35,6 +35,8 @@ This plugin provides a cross-platform Dart API built on top of the native PortSI
 - **Call Controls** - Hold, mute, DTMF tones, loudspeaker toggle, audio route selection (Android)
 - **Conference Calls** - Merge calls into a native conference (`requestCallGroup`, `endCallAndResume`)
 - **Call Statistics** - Poll RTP media statistics during a call (`getStatistics`)
+- **Call Recording** - Record a call to a file (`startRecord`, `stopRecord`)
+- **Play to Remote** - Play an audio file into the outgoing stream (`startPlayingFileToRemote`)
 - **Audio Codecs** - Configure preferred audio codecs (OPUS, G.722, G.729, etc.)
 - **Audio Processing** - AEC, AGC, ANS, CNG, VAD for enhanced audio quality
 - **SRTP Encryption** - Configurable secure RTP policy for encrypted calls
@@ -606,6 +608,64 @@ if (Platform.isAndroid) {
   await portsip.enableAudioManager(enable: true);
 }
 ```
+
+## Call Recording
+
+`startRecord` writes the call audio to a file and `stopRecord` closes it.
+
+```dart
+await portsip.startRecord(
+  sessionId: sessionId,
+  recordFilePath: directory.path, // must already exist
+  recordFileName: 'call', // no extension — the SDK appends it
+  audioChannels: 1,
+  fileFormat: PortsipRecordFileFormat.wave,
+  audioRecordMode: PortsipRecordMode.both, // local mic + remote party
+  videoRecordMode: PortsipRecordMode.none,
+);
+
+await portsip.stopRecord(sessionId: sessionId);
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `recordFilePath` | Directory the file is written to. **It must already exist** — the SDK does not create it. |
+| `recordFileName` | File name **without** an extension — the SDK appends the one matching `fileFormat`, so passing `call.wav` writes `call.wav.wav`. |
+| `appendTimeStamp` | Appends a timestamp to the file name. |
+| `audioChannels` | 1 = mono, 2 = stereo. |
+| `fileFormat` | `PortsipRecordFileFormat`: `wave`, `amr` (mono only), `mp3`, `mp4` (video). |
+| `audioRecordMode` / `videoRecordMode` | `PortsipRecordMode`: `none`, `receive`, `send`, `both`. |
+
+> **Recording is per session, not per call.** The SDK has no conference-level
+> recorder, so a conference must be recorded by calling `startRecord` on every
+> leg — each leg writing its own file. Stop a leg's recording before ending
+> that leg, so the SDK can finalise the file while the session still exists.
+
+## Playing a File to the Remote Party
+
+`startPlayingFileToRemote` feeds an audio file into the stream the remote party
+receives — in-call announcements, hold music, prompts.
+
+```dart
+await portsip.startPlayingFileToRemote(
+  sessionId: sessionId,
+  fileUrl: '${directory.path}/announcement.wav',
+  loop: false,
+  // Remote party hears the file AND the live microphone.
+  playAudio: PortsipPlayFileAudioMode.mixedWithMicrophone,
+);
+
+await portsip.stopPlayingFileToRemote(sessionId: sessionId);
+```
+
+| `playAudio` | Effect |
+|-------------|--------|
+| `none` | The file's audio isn't played (video-only playback). |
+| `fileOnly` | The file replaces the microphone — the caller isn't heard. |
+| `mixedWithMicrophone` | The file plays over the live microphone. **Default.** |
+
+> Playback is per session, like recording. To reach every participant of a
+> conference, play the file on each leg.
 
 ## Events Reference
 

@@ -58,6 +58,14 @@ void main() {
               return 0; // Success
             case 'updateCall':
               return 0; // Success
+            case 'startRecord':
+              return 0; // Success
+            case 'stopRecord':
+              return 0; // Success
+            case 'startPlayingFileToRemote':
+              return 0; // Success
+            case 'stopPlayingFileToRemote':
+              return 0; // Success
             case 'enableSessionTimer':
               return 0; // Success
             case 'configureConnectionService':
@@ -874,6 +882,161 @@ void main() {
 
     test('returns result from native', () async {
       final result = await platform.updateCall(sessionId: 1);
+      expect(result, 0);
+    });
+  });
+
+  group('startRecord', () {
+    test('calls method channel with correct method name', () async {
+      await platform.startRecord(
+        sessionId: 1,
+        recordFilePath: '/tmp/recordings',
+        recordFileName: 'call',
+      );
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'startRecord');
+    });
+
+    test('uses WAVE mono, both audio directions, no video by default', () async {
+      await platform.startRecord(
+        sessionId: 1,
+        recordFilePath: '/tmp/recordings',
+        recordFileName: 'call',
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 1);
+      expect(args['recordFilePath'], '/tmp/recordings');
+      expect(args['recordFileName'], 'call');
+      expect(args['appendTimeStamp'], false);
+      expect(args['audioChannels'], 1);
+      expect(args['fileFormat'], PortsipRecordFileFormat.wave.value);
+      expect(args['audioRecordMode'], PortsipRecordMode.both.value);
+      expect(args['videoRecordMode'], PortsipRecordMode.none.value);
+    });
+
+    test('passes custom values', () async {
+      await platform.startRecord(
+        sessionId: 7,
+        recordFilePath: '/tmp/recordings',
+        recordFileName: 'recording',
+        appendTimeStamp: true,
+        audioChannels: 2,
+        fileFormat: PortsipRecordFileFormat.mp3,
+        audioRecordMode: PortsipRecordMode.receive,
+        videoRecordMode: PortsipRecordMode.send,
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 7);
+      expect(args['recordFileName'], 'recording');
+      expect(args['appendTimeStamp'], true);
+      expect(args['audioChannels'], 2);
+      expect(args['fileFormat'], PortsipRecordFileFormat.mp3.value);
+      expect(args['audioRecordMode'], PortsipRecordMode.receive.value);
+      expect(args['videoRecordMode'], PortsipRecordMode.send.value);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.startRecord(
+        sessionId: 1,
+        recordFilePath: '/tmp/recordings',
+        recordFileName: 'call',
+      );
+      expect(result, 0);
+    });
+  });
+
+  group('stopRecord', () {
+    test('calls method channel with correct method name', () async {
+      await platform.stopRecord(sessionId: 1);
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'stopRecord');
+    });
+
+    test('passes the session id', () async {
+      await platform.stopRecord(sessionId: 42);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 42);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.stopRecord(sessionId: 1);
+      expect(result, 0);
+    });
+  });
+
+  group('startPlayingFileToRemote', () {
+    test('calls method channel with correct method name', () async {
+      await platform.startPlayingFileToRemote(
+        sessionId: 1,
+        fileUrl: '/announcement.wav',
+      );
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'startPlayingFileToRemote');
+    });
+
+    test('defaults to no loop, mixed with the microphone', () async {
+      await platform.startPlayingFileToRemote(
+        sessionId: 1,
+        fileUrl: '/announcement.wav',
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 1);
+      expect(args['fileUrl'], '/announcement.wav');
+      expect(args['loop'], false);
+      expect(
+        args['playAudio'],
+        PortsipPlayFileAudioMode.mixedWithMicrophone.value,
+      );
+    });
+
+    test('passes custom values', () async {
+      await platform.startPlayingFileToRemote(
+        sessionId: 7,
+        fileUrl: '/hold_music.wav',
+        loop: true,
+        playAudio: PortsipPlayFileAudioMode.fileOnly,
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 7);
+      expect(args['fileUrl'], '/hold_music.wav');
+      expect(args['loop'], true);
+      expect(args['playAudio'], PortsipPlayFileAudioMode.fileOnly.value);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.startPlayingFileToRemote(
+        sessionId: 1,
+        fileUrl: '/announcement.wav',
+      );
+      expect(result, 0);
+    });
+  });
+
+  group('stopPlayingFileToRemote', () {
+    test('calls method channel with correct method name', () async {
+      await platform.stopPlayingFileToRemote(sessionId: 1);
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'stopPlayingFileToRemote');
+    });
+
+    test('passes the session id', () async {
+      await platform.stopPlayingFileToRemote(sessionId: 42);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 42);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.stopPlayingFileToRemote(sessionId: 1);
       expect(result, 0);
     });
   });

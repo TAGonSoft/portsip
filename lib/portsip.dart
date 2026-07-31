@@ -941,6 +941,109 @@ class Portsip {
     return await PortsipPlatform.instance.getStatistics(sessionId: sessionId);
   }
 
+  /// Start recording the call on a session.
+  ///
+  /// Recording is per session, not per call: the SDK has no conference-level
+  /// recorder, so a conference is recorded by calling this once per leg (each
+  /// leg writing its own file).
+  ///
+  /// [sessionId] - The session ID of the call to record.
+  /// [recordFilePath] - Directory the file is written to. It must already
+  /// exist; the SDK does not create it.
+  /// [recordFileName] - File name *without* an extension, e.g. `call`. The
+  /// SDK appends the extension matching [fileFormat] itself, so passing
+  /// `call.wav` writes `call.wav.wav`.
+  /// [appendTimeStamp] - Appends a timestamp to the file name when true.
+  /// [audioChannels] - 1 for mono, 2 for stereo.
+  /// [fileFormat] - Container for the recording (default: WAVE).
+  /// [audioRecordMode] - Which audio directions to capture (default: both).
+  /// [videoRecordMode] - Which video directions to capture (default: none).
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> startRecord({
+    required int sessionId,
+    required String recordFilePath,
+    required String recordFileName,
+    bool appendTimeStamp = false,
+    int audioChannels = 1,
+    PortsipRecordFileFormat fileFormat = PortsipRecordFileFormat.wave,
+    PortsipRecordMode audioRecordMode = PortsipRecordMode.both,
+    PortsipRecordMode videoRecordMode = PortsipRecordMode.none,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.startRecord(
+      sessionId: sessionId,
+      recordFilePath: recordFilePath,
+      recordFileName: recordFileName,
+      appendTimeStamp: appendTimeStamp,
+      audioChannels: audioChannels,
+      fileFormat: fileFormat,
+      audioRecordMode: audioRecordMode,
+      videoRecordMode: videoRecordMode,
+    );
+  }
+
+  /// Stop the recording running on a session.
+  ///
+  /// [sessionId] - The session ID whose recording should stop.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> stopRecord({required int sessionId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.stopRecord(sessionId: sessionId);
+  }
+
+  /// Play a file into the stream sent to the remote party.
+  ///
+  /// The remote party hears the file as if it were coming from the
+  /// microphone. With the default
+  /// [PortsipPlayFileAudioMode.mixedWithMicrophone] the microphone stays live
+  /// underneath it, which is what an in-call announcement wants — use
+  /// [PortsipPlayFileAudioMode.fileOnly] to replace the caller's voice
+  /// instead.
+  ///
+  /// [sessionId] - The session ID of the call to play into.
+  /// [fileUrl] - Path or URL of the file, e.g. `/announcement.wav`.
+  /// [loop] - Repeat the file instead of stopping when it ends.
+  /// [playAudio] - How the file's audio mixes with the microphone.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> startPlayingFileToRemote({
+    required int sessionId,
+    required String fileUrl,
+    bool loop = false,
+    PortsipPlayFileAudioMode playAudio =
+        PortsipPlayFileAudioMode.mixedWithMicrophone,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.startPlayingFileToRemote(
+      sessionId: sessionId,
+      fileUrl: fileUrl,
+      loop: loop,
+      playAudio: playAudio,
+    );
+  }
+
+  /// Stop the file playback running on a session.
+  ///
+  /// [sessionId] - The session ID whose playback should stop.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> stopPlayingFileToRemote({required int sessionId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.stopPlayingFileToRemote(
+      sessionId: sessionId,
+    );
+  }
+
   /// Unregister from the SIP server
   ///
   /// This method unregisters from the SIP server without releasing SDK resources.

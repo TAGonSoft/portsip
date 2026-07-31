@@ -184,6 +184,30 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.getStatistics(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "getStatistics", resultValue)
             result(resultValue)
+        case .startRecord:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "startRecord", arguments)
+            let resultValue = PortsipController.shared.startRecord(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "startRecord", resultValue)
+            result(resultValue)
+        case .stopRecord:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "stopRecord", arguments)
+            let resultValue = PortsipController.shared.stopRecord(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "stopRecord", resultValue)
+            result(resultValue)
+        case .startPlayingFileToRemote:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "startPlayingFileToRemote", arguments)
+            let resultValue = PortsipController.shared.startPlayingFileToRemote(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "startPlayingFileToRemote", resultValue)
+            result(resultValue)
+        case .stopPlayingFileToRemote:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "stopPlayingFileToRemote", arguments)
+            let resultValue = PortsipController.shared.stopPlayingFileToRemote(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "stopPlayingFileToRemote", resultValue)
+            result(resultValue)
         case .configureCallKit:
             let arguments = call.arguments as? [String: Any] ?? [:]
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "configureCallKit", arguments)

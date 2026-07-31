@@ -1061,6 +1061,120 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Starts recording the call on a session.
+  ///
+  /// Invokes the native 'startRecord' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> startRecord({
+    required int sessionId,
+    required String recordFilePath,
+    required String recordFileName,
+    bool appendTimeStamp = false,
+    int audioChannels = 1,
+    PortsipRecordFileFormat fileFormat = PortsipRecordFileFormat.wave,
+    PortsipRecordMode audioRecordMode = PortsipRecordMode.both,
+    PortsipRecordMode videoRecordMode = PortsipRecordMode.none,
+  }) async {
+    final args = {
+      'sessionId': sessionId,
+      'recordFilePath': recordFilePath,
+      'recordFileName': recordFileName,
+      'appendTimeStamp': appendTimeStamp,
+      'audioChannels': audioChannels,
+      'fileFormat': fileFormat.value,
+      'audioRecordMode': audioRecordMode.value,
+      'videoRecordMode': videoRecordMode.value,
+    };
+    _logCall('startRecord', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'startRecord',
+        args,
+      );
+      _logResponse('startRecord', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('startRecord', e);
+      return -1;
+    }
+  }
+
+  /// Stops the recording running on a session.
+  ///
+  /// Invokes the native 'stopRecord' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> stopRecord({required int sessionId}) async {
+    final args = {'sessionId': sessionId};
+    _logCall('stopRecord', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>('stopRecord', args);
+      _logResponse('stopRecord', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('stopRecord', e);
+      return -1;
+    }
+  }
+
+  /// Plays a file into the stream sent to the remote party.
+  ///
+  /// Invokes the native 'startPlayingFileToRemote' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> startPlayingFileToRemote({
+    required int sessionId,
+    required String fileUrl,
+    bool loop = false,
+    PortsipPlayFileAudioMode playAudio =
+        PortsipPlayFileAudioMode.mixedWithMicrophone,
+  }) async {
+    final args = {
+      'sessionId': sessionId,
+      'fileUrl': fileUrl,
+      'loop': loop,
+      'playAudio': playAudio.value,
+    };
+    _logCall('startPlayingFileToRemote', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'startPlayingFileToRemote',
+        args,
+      );
+      _logResponse('startPlayingFileToRemote', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('startPlayingFileToRemote', e);
+      return -1;
+    }
+  }
+
+  /// Stops the file playback running on a session.
+  ///
+  /// Invokes the native 'stopPlayingFileToRemote' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> stopPlayingFileToRemote({required int sessionId}) async {
+    final args = {'sessionId': sessionId};
+    _logCall('stopPlayingFileToRemote', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'stopPlayingFileToRemote',
+        args,
+      );
+      _logResponse('stopPlayingFileToRemote', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('stopPlayingFileToRemote', e);
+      return -1;
+    }
+  }
+
   /// Tears down the native SDK while keeping the plugin (and its event
   /// stream) alive. Used to swap SIP users at runtime.
   @override

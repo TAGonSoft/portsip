@@ -606,6 +606,59 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('getStatistics has not been implemented.');
   }
 
+  /// Starts recording the call on [sessionId] to
+  /// `recordFilePath`/`recordFileName`. `recordFileName` carries no
+  /// extension — the SDK appends the one matching [fileFormat].
+  ///
+  /// Recording is per session: a conference has to be recorded by starting a
+  /// recording on each of its legs.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> startRecord({
+    required int sessionId,
+    required String recordFilePath,
+    required String recordFileName,
+    bool appendTimeStamp = false,
+    int audioChannels = 1,
+    PortsipRecordFileFormat fileFormat = PortsipRecordFileFormat.wave,
+    PortsipRecordMode audioRecordMode = PortsipRecordMode.both,
+    PortsipRecordMode videoRecordMode = PortsipRecordMode.none,
+  }) async {
+    throw UnimplementedError('startRecord has not been implemented.');
+  }
+
+  /// Stops the recording running on [sessionId].
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> stopRecord({required int sessionId}) async {
+    throw UnimplementedError('stopRecord has not been implemented.');
+  }
+
+  /// Plays the audio/video file at [fileUrl] into the stream sent to the
+  /// remote party on [sessionId].
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> startPlayingFileToRemote({
+    required int sessionId,
+    required String fileUrl,
+    bool loop = false,
+    PortsipPlayFileAudioMode playAudio =
+        PortsipPlayFileAudioMode.mixedWithMicrophone,
+  }) async {
+    throw UnimplementedError(
+      'startPlayingFileToRemote has not been implemented.',
+    );
+  }
+
+  /// Stops the file playback running on [sessionId].
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> stopPlayingFileToRemote({required int sessionId}) async {
+    throw UnimplementedError(
+      'stopPlayingFileToRemote has not been implemented.',
+    );
+  }
+
   /// Tears down the native SDK so a different user can be loaded via
   /// [initialize] + [register] again, without shutting down the plugin.
   ///

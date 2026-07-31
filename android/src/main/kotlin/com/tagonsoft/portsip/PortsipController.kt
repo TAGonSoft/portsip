@@ -486,6 +486,78 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     /**
+     * Starts recording a session to a file.
+     *
+     * Recording is per session: the SDK has no conference-level recorder, so a
+     * conference is recorded by starting one recording per leg.
+     *
+     * @param arguments Map containing sessionId, recordFilePath, recordFileName,
+     * appendTimeStamp, audioChannels, fileFormat, audioRecordMode, videoRecordMode
+     * @return 0 on success, error code otherwise
+     */
+    fun startRecord(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        val recordFilePath = arguments["recordFilePath"] as? String ?: return -1
+        val recordFileName = arguments["recordFileName"] as? String ?: return -1
+        val appendTimeStamp = arguments["appendTimeStamp"] as? Boolean ?: false
+        val audioChannels = (arguments["audioChannels"] as? Number)?.toInt() ?: 1
+        val fileFormat = (arguments["fileFormat"] as? Number)?.toInt() ?: 1
+        val audioRecordMode = (arguments["audioRecordMode"] as? Number)?.toInt() ?: 3
+        val videoRecordMode = (arguments["videoRecordMode"] as? Number)?.toInt() ?: 0
+        return portSipSdk?.startRecord(
+            sessionId,
+            recordFilePath,
+            recordFileName,
+            appendTimeStamp,
+            audioChannels,
+            fileFormat,
+            audioRecordMode,
+            videoRecordMode
+        ) ?: -1
+    }
+
+    /**
+     * Stops the recording running on a session.
+     * @param arguments Map containing sessionId
+     * @return 0 on success, error code otherwise
+     */
+    fun stopRecord(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        return portSipSdk?.stopRecord(sessionId) ?: -1
+    }
+
+    /**
+     * Plays a file into the stream sent to the remote party.
+     *
+     * @param arguments Map containing sessionId, fileUrl, loop, playAudio
+     * (0 = don't play file audio, 1 = file audio only, 2 = file audio mixed
+     * with the microphone)
+     * @return 0 on success, error code otherwise
+     */
+    fun startPlayingFileToRemote(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        val fileUrl = arguments["fileUrl"] as? String ?: return -1
+        val loop = arguments["loop"] as? Boolean ?: false
+        val playAudio = (arguments["playAudio"] as? Number)?.toInt() ?: 2
+        return portSipSdk?.startPlayingFileToRemote(
+            sessionId,
+            fileUrl,
+            loop,
+            playAudio
+        ) ?: -1
+    }
+
+    /**
+     * Stops the file playback running on a session.
+     * @param arguments Map containing sessionId
+     * @return 0 on success, error code otherwise
+     */
+    fun stopPlayingFileToRemote(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        return portSipSdk?.stopPlayingFileToRemote(sessionId) ?: -1
+    }
+
+    /**
      * Resumes a call that was on hold.
      * @param arguments Map containing sessionId
      * @return 0 on success, error code otherwise

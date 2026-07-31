@@ -253,6 +253,38 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.START_RECORD -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "startRecord", arguments)
+                    val resultValue = PortsipController.shared.startRecord(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "startRecord", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.STOP_RECORD -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "stopRecord", arguments)
+                    val resultValue = PortsipController.shared.stopRecord(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "stopRecord", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.START_PLAYING_FILE_TO_REMOTE -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "startPlayingFileToRemote", arguments)
+                    val resultValue = PortsipController.shared.startPlayingFileToRemote(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "startPlayingFileToRemote", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.STOP_PLAYING_FILE_TO_REMOTE -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "stopPlayingFileToRemote", arguments)
+                    val resultValue = PortsipController.shared.stopPlayingFileToRemote(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "stopPlayingFileToRemote", resultValue)
+                    result.success(resultValue)
+                }
+
                 PortsipMethodCall.SET_LICENSE_KEY -> {
                     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
                     PortsipLogger.logCall(COMPONENT, "setLicenseKey", arguments)
