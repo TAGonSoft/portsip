@@ -1,26 +1,3 @@
-## 0.1.4
-
-* **Feature**: call recording. `startRecord({sessionId, recordFilePath,
-recordFileName, appendTimeStamp, audioChannels, fileFormat, audioRecordMode,
-videoRecordMode})` and `stopRecord({sessionId})`, wired on both iOS and
-Android. `recordFilePath` must be an existing directory — the SDK does not
-create it. New [PortsipRecordFileFormat] (`wave | amr | mp3 | mp4`) and
-[PortsipRecordMode] (`none | receive | send | both`) enums carry the SDK's
-values.
-* Recording is per session, not per call: the SDK exposes no conference-level
-recorder, so a conference has to be recorded by starting a recording on each
-of its legs, each writing its own file.
-* **Note**: the SDK appends the extension matching `fileFormat` to
-`recordFileName` itself — passing `call.wav` writes `call.wav.wav`. Pass the
-name without an extension.
-* **Feature**: play a file to the remote party.
-`startPlayingFileToRemote({sessionId, fileUrl, loop, playAudio})` and
-`stopPlayingFileToRemote({sessionId})`, wired on both iOS and Android. The new
-[PortsipPlayFileAudioMode] enum (`none | fileOnly | mixedWithMicrophone`)
-controls how the file mixes with the microphone; `mixedWithMicrophone` (the
-default) keeps the caller audible underneath the file, which is what an in-call
-announcement needs.
-
 ## 0.1.3
 
 * **Fix (iOS)**: `startKeepAwake` no longer outlives the SDK. Both teardown
