@@ -950,8 +950,9 @@ class Portsip {
   /// [sessionId] - The session ID of the call to record.
   /// [recordFilePath] - Directory the file is written to. It must already
   /// exist; the SDK does not create it.
-  /// [recordFileName] - File name including the extension, e.g.
-  /// `call.wav` for [PortsipRecordFileFormat.wave].
+  /// [recordFileName] - File name *without* an extension, e.g. `call`. The
+  /// SDK appends the extension matching [fileFormat] itself, so passing
+  /// `call.wav` writes `call.wav.wav`.
   /// [appendTimeStamp] - Appends a timestamp to the file name when true.
   /// [audioChannels] - 1 for mono, 2 for stereo.
   /// [fileFormat] - Container for the recording (default: WAVE).

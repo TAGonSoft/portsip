@@ -617,7 +617,7 @@ if (Platform.isAndroid) {
 await portsip.startRecord(
   sessionId: sessionId,
   recordFilePath: directory.path, // must already exist
-  recordFileName: 'call.wav',
+  recordFileName: 'call', // no extension — the SDK appends it
   audioChannels: 1,
   fileFormat: PortsipRecordFileFormat.wave,
   audioRecordMode: PortsipRecordMode.both, // local mic + remote party

@@ -607,7 +607,8 @@ abstract class PortsipPlatform extends PlatformInterface {
   }
 
   /// Starts recording the call on [sessionId] to
-  /// `recordFilePath`/`recordFileName`.
+  /// `recordFilePath`/`recordFileName`. `recordFileName` carries no
+  /// extension — the SDK appends the one matching [fileFormat].
   ///
   /// Recording is per session: a conference has to be recorded by starting a
   /// recording on each of its legs.

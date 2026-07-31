@@ -891,7 +891,7 @@ void main() {
       await platform.startRecord(
         sessionId: 1,
         recordFilePath: '/tmp/recordings',
-        recordFileName: 'call.wav',
+        recordFileName: 'call',
       );
 
       expect(methodCalls.length, 1);
@@ -902,13 +902,13 @@ void main() {
       await platform.startRecord(
         sessionId: 1,
         recordFilePath: '/tmp/recordings',
-        recordFileName: 'call.wav',
+        recordFileName: 'call',
       );
 
       final args = methodCalls.first.arguments as Map;
       expect(args['sessionId'], 1);
       expect(args['recordFilePath'], '/tmp/recordings');
-      expect(args['recordFileName'], 'call.wav');
+      expect(args['recordFileName'], 'call');
       expect(args['appendTimeStamp'], false);
       expect(args['audioChannels'], 1);
       expect(args['fileFormat'], PortsipRecordFileFormat.wave.value);
@@ -920,7 +920,7 @@ void main() {
       await platform.startRecord(
         sessionId: 7,
         recordFilePath: '/tmp/recordings',
-        recordFileName: 'call.mp3',
+        recordFileName: 'recording',
         appendTimeStamp: true,
         audioChannels: 2,
         fileFormat: PortsipRecordFileFormat.mp3,
@@ -930,7 +930,7 @@ void main() {
 
       final args = methodCalls.first.arguments as Map;
       expect(args['sessionId'], 7);
-      expect(args['recordFileName'], 'call.mp3');
+      expect(args['recordFileName'], 'recording');
       expect(args['appendTimeStamp'], true);
       expect(args['audioChannels'], 2);
       expect(args['fileFormat'], PortsipRecordFileFormat.mp3.value);
@@ -942,7 +942,7 @@ void main() {
       final result = await platform.startRecord(
         sessionId: 1,
         recordFilePath: '/tmp/recordings',
-        recordFileName: 'call.wav',
+        recordFileName: 'call',
       );
       expect(result, 0);
     });
