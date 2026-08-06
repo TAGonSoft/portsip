@@ -370,7 +370,9 @@ abstract class PortsipPlatform extends PlatformInterface {
     required String appName,
     bool canUseConnectionService = true,
   }) async {
-    throw UnimplementedError('configureConnectionService has not been implemented.');
+    throw UnimplementedError(
+      'configureConnectionService has not been implemented.',
+    );
   }
 
   /// Enables or disables ConnectionService at runtime (Android only).
@@ -382,7 +384,9 @@ abstract class PortsipPlatform extends PlatformInterface {
   ///
   /// Returns 0 on success, negative error code on failure.
   Future<int> enableConnectionService({required bool enabled}) async {
-    throw UnimplementedError('enableConnectionService has not been implemented.');
+    throw UnimplementedError(
+      'enableConnectionService has not been implemented.',
+    );
   }
 
   /// Sets the PortSIP license key.
@@ -632,6 +636,25 @@ abstract class PortsipPlatform extends PlatformInterface {
   /// Returns 0 on success, negative error code on failure.
   Future<int> stopRecord({required int sessionId}) async {
     throw UnimplementedError('stopRecord has not been implemented.');
+  }
+
+  /// Writes [sessionId]'s raw audio stream to `<recordFileName>.wav` in
+  /// [recordFilePath]: stereo, sent audio left and received right.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> startPcmRecord({
+    required int sessionId,
+    required String recordFilePath,
+    required String recordFileName,
+  }) async {
+    throw UnimplementedError('startPcmRecord has not been implemented.');
+  }
+
+  /// Stops the raw-audio recording on [sessionId] and finalises its files.
+  ///
+  /// Returns the finished recording's path, or null if nothing was captured.
+  Future<String?> stopPcmRecord({required int sessionId}) async {
+    throw UnimplementedError('stopPcmRecord has not been implemented.');
   }
 
   /// Plays the audio/video file at [fileUrl] into the stream sent to the

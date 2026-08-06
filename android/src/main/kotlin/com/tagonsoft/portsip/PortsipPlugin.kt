@@ -1,6 +1,8 @@
 package com.tagonsoft.portsip
 
 import android.app.Activity
+import android.os.Handler
+import android.os.Looper
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -22,6 +24,13 @@ import io.flutter.plugin.common.MethodChannel.Result
 class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     private lateinit var channel: MethodChannel
+
+    /**
+     * Returns a result produced off the platform thread back onto it. Built on
+     * first use: constructing the plugin must not reach for a Looper, which a
+     * JVM unit test has no way to provide.
+     */
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
     companion object {
         private const val COMPONENT = "Plugin"
@@ -267,6 +276,29 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     val resultValue = PortsipController.shared.stopRecord(arguments)
                     PortsipLogger.logResponse(COMPONENT, "stopRecord", resultValue)
                     result.success(resultValue)
+                }
+
+                PortsipMethodCall.START_PCM_RECORD -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "startPcmRecord", arguments)
+                    val resultValue = PortsipController.shared.startPcmRecord(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "startPcmRecord", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.STOP_PCM_RECORD -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "stopPcmRecord", arguments)
+                    // Merging the per-direction parts rewrites the whole
+                    // recording, so it finishes on the recorder's thread and
+                    // answers from there. A MethodChannel.Result must be
+                    // completed on the platform thread.
+                    PortsipController.shared.stopPcmRecord(arguments) { path ->
+                        mainHandler.post {
+                            PortsipLogger.logResponse(COMPONENT, "stopPcmRecord", path)
+                            result.success(path)
+                        }
+                    }
                 }
 
                 PortsipMethodCall.START_PLAYING_FILE_TO_REMOTE -> {

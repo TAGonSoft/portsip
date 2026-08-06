@@ -997,6 +997,55 @@ class Portsip {
     return await PortsipPlatform.instance.stopRecord(sessionId: sessionId);
   }
 
+  /// Write a session's raw audio stream to a WAVE file.
+  ///
+  /// An alternative to [startRecord] that writes the PCM the SDK delivers to
+  /// its audio stream callback, rather than routing it through the SDK's own
+  /// recorder. Both directions are captured into one stereo `<recordFileName>.wav`
+  /// — sent audio on the left channel, received on the right — so neither side
+  /// can clip the other and the two remain separable. A call that produced only
+  /// one direction stays mono.
+  ///
+  /// [recordFilePath] must already exist; it is not created.
+  ///
+  /// Android only for now; returns -1 elsewhere.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> startPcmRecord({
+    required int sessionId,
+    required String recordFilePath,
+    required String recordFileName,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.startPcmRecord(
+      sessionId: sessionId,
+      recordFilePath: recordFilePath,
+      recordFileName: recordFileName,
+    );
+  }
+
+  /// Stop the raw-audio recording on a session and finalise its files.
+  ///
+  /// Completes once the per-direction parts have been merged and the file is on
+  /// disk, which for a long call takes a moment.
+  ///
+  /// If the call ended before this is called, the recording is still collectable
+  /// — stopping from an `onInviteClosed` handler is the ordinary case.
+  ///
+  /// [sessionId] - The session ID whose recording should stop.
+  ///
+  /// **Android only** — returns null on iOS.
+  ///
+  /// Returns the finished recording's path, or null if nothing was captured.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<String?> stopPcmRecord({required int sessionId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.stopPcmRecord(sessionId: sessionId);
+  }
+
   /// Play a file into the stream sent to the remote party.
   ///
   /// The remote party hears the file as if it were coming from the
