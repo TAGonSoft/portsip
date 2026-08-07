@@ -35,7 +35,7 @@ This plugin provides a cross-platform Dart API built on top of the native PortSI
 - **Call Controls** - Hold, mute, DTMF tones, loudspeaker toggle, audio route selection (Android)
 - **Conference Calls** - Merge calls into a native conference (`requestCallGroup`, `endCallAndResume`)
 - **Call Statistics** - Poll RTP media statistics during a call (`getStatistics`)
-- **Call Recording** - Record a call to a file (`startRecord`, `stopRecord`)
+- **Call Recording** - Record a call to a file (`startRecord`, `stopRecord`), or capture the raw audio stream to a stereo WAVE file (`startPcmRecord`, `stopPcmRecord`, Android)
 - **Play to Remote** - Play an audio file into the outgoing stream (`startPlayingFileToRemote`)
 - **Audio Codecs** - Configure preferred audio codecs (OPUS, G.722, G.729, etc.)
 - **Audio Processing** - AEC, AGC, ANS, CNG, VAD for enhanced audio quality
@@ -640,6 +640,48 @@ await portsip.stopRecord(sessionId: sessionId);
 > recorder, so a conference must be recorded by calling `startRecord` on every
 > leg — each leg writing its own file. Stop a leg's recording before ending
 > that leg, so the SDK can finalise the file while the session still exists.
+
+### Raw Audio Recording (Android)
+
+`startPcmRecord` is an alternative to `startRecord` that writes the PCM the SDK
+hands to its audio stream callback, instead of routing it through the SDK's own
+recorder. Both directions land in one stereo `<recordFileName>.wav` — **what
+this side sent on the left channel, what it received on the right** — so
+neither party can clip the other and the two stay separable for anything
+reading the file later. A call that only ever produced one direction stays
+mono.
+
+```dart
+await portsip.startPcmRecord(
+  sessionId: sessionId,
+  recordFilePath: directory.path, // must already exist
+  recordFileName: 'call', // no extension — `.wav` is appended
+);
+
+// Returns the finished recording's path, or null if nothing was captured.
+final path = await portsip.stopPcmRecord(sessionId: sessionId);
+```
+
+While the call runs, each direction is written to its own `.partN` scratch file
+next to the recording; `stopPcmRecord` interleaves them, deletes the parts and
+completes once the finished file is on disk — for a long call that takes a
+moment. Parts stranded by a process killed mid-call are swept the next time a
+recording starts in that directory.
+
+> **Stopping after the call has ended is the ordinary case.** Calling
+> `stopPcmRecord` from an `onInviteClosed` handler still returns the recording.
+> An app that never calls it at all loses the recording — the parts are closed
+> when the call ends, but only `stopPcmRecord` merges them.
+
+| | `startRecord` | `startPcmRecord` |
+|---|---|---|
+| Platforms | iOS + Android | Android only (returns -1 / null on iOS) |
+| Formats | `wave`, `amr`, `mp3`, `mp4` | 16-bit PCM WAVE only |
+| Video | Yes (`mp4`) | No |
+| Channel layout | Mixed per `audioRecordMode` | Sent left, received right |
+| Result | File written by the SDK | Path returned by `stopPcmRecord` |
+
+Both recorders can run on the same session; they write independent files.
 
 ## Playing a File to the Remote Party
 

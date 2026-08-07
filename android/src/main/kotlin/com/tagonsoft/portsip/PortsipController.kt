@@ -20,6 +20,9 @@ class PortsipController private constructor() : OnPortSIPEvent {
     private var portSipSdk: PortSipSdk? = null
     private var context: Context? = null
 
+    /** Writes the raw audio stream to disk — see startPcmRecord. */
+    private val pcmRecorder = PortsipPcmRecorder()
+
     /** True while the SDK audio-conference bridge exists (createAudioConference →
      *  destroyConference). Telecom's one-active-call juggling must not reach the
      *  SDK then: SDK-holding a joined leg stops its media and starves the mixer. */
@@ -527,6 +530,64 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     /**
+     * Starts writing a session's raw audio stream to WAVE files — one per
+     * callback type the stream reports.
+     *
+     * Independent of [startRecord]: this takes the PCM the SDK hands to the
+     * audio stream callback and writes it verbatim, so the file holds the
+     * stream as delivered rather than as the SDK's own recorder re-encodes it.
+     *
+     * @param arguments Map containing sessionId, recordFilePath, recordFileName
+     * @return 0 on success, error code otherwise
+     */
+    fun startPcmRecord(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: return -1
+        val recordFilePath = arguments["recordFilePath"] as? String ?: return -1
+        val recordFileName = arguments["recordFileName"] as? String ?: return -1
+        // Before the recorder starts: bailing out afterwards would leave a
+        // session the next startPcmRecord takes for one already running.
+        val sdk = portSipSdk ?: return -1
+        if (!pcmRecorder.start(sessionId, recordFilePath, recordFileName)) return -1
+        // Returns void — the SDK reports nothing here, not even for an unknown
+        // session, so 0 only means the recorder is ready and the request went
+        // in. Whether audio arrived is answered by stopPcmRecord's null.
+        sdk.enableAudioStreamCallback(
+            sessionId,
+            true,
+            PortSipEnumDefine.ENUM_DIRECTION_SEND_RECV
+        )
+        return 0
+    }
+
+    /**
+     * Stops the raw-audio recording and finalises its files, handing the
+     * finished recording's path to [completion] — or null if nothing was
+     * captured.
+     *
+     * [completion] runs on the recorder's own thread once the merge is done:
+     * combining a long call rewrites every byte it holds, which must not run on
+     * the platform thread or under [sdkLock]. With nothing to merge it runs
+     * inline instead, so it must not assume either thread.
+     *
+     * @param arguments Map containing sessionId
+     */
+    fun stopPcmRecord(arguments: Map<String, Any?>, completion: (String?) -> Unit) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong()
+        if (sessionId == null) {
+            completion(null)
+            return
+        }
+        synchronized(sdkLock) {
+            portSipSdk?.enableAudioStreamCallback(
+                sessionId,
+                false,
+                PortSipEnumDefine.ENUM_DIRECTION_NONE
+            )
+        }
+        pcmRecorder.stop(sessionId, completion)
+    }
+
+    /**
      * Plays a file into the stream sent to the remote party.
      *
      * @param arguments Map containing sessionId, fileUrl, loop, playAudio
@@ -1031,6 +1092,10 @@ class PortsipController private constructor() : OnPortSIPEvent {
         code: Int,
         sipMessage: String?
     ) {
+        // A call that never connected can still have been recording (see
+        // onInviteClosed).
+        pcmRecorder.finish(sessionId)
+
         // A merged-conference primary's Connection is transferred to a
         // surviving leg instead of ended (see transferSystemCallIfNeeded).
         if (PortsipConnectionService.transferSystemCallIfNeeded(sessionId) == null) {
@@ -1063,6 +1128,12 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     override fun onInviteClosed(sessionId: Long, sipMessage: String?) {
+        // Releases the part-file handles an app that never calls stopPcmRecord
+        // would otherwise hold for the life of the process. The recording stays
+        // collectable: an app stopping from its own call-ended handler gets
+        // here first.
+        pcmRecorder.finish(sessionId)
+
         // A merged-conference primary's Connection is transferred to a
         // surviving leg instead of ended (see transferSystemCallIfNeeded).
         if (PortsipConnectionService.transferSystemCallIfNeeded(sessionId) == null) {
@@ -1143,7 +1214,10 @@ class PortsipController private constructor() : OnPortSIPEvent {
     override fun onAudioDeviceChanged(audioDevice: PortSipEnumDefine.AudioDevice?, deviceSet: MutableSet<PortSipEnumDefine.AudioDevice>?) {}
     override fun onAudioFocusChange(focusState: Int) {}
     override fun onRTPPacketCallback(sessionId: Long, mediaType: Int, direction: Int, rtpPacket: ByteArray?, packetSize: Int) {}
-    override fun onAudioRawCallback(sessionId: Long, callbackType: Int, data: ByteArray?, dataLength: Int, samplingFreqHz: Int) {}
+    override fun onAudioRawCallback(sessionId: Long, callbackType: Int, data: ByteArray?, dataLength: Int, samplingFreqHz: Int) {
+        if (data == null) return
+        pcmRecorder.write(sessionId, callbackType, data, dataLength, samplingFreqHz)
+    }
     override fun onVideoRawCallback(sessionId: Long, callbackType: Int, width: Int, height: Int, data: ByteArray?, dataLength: Int) {}
 
     // MARK: - Cleanup Methods
@@ -1162,6 +1236,10 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun dispose() = synchronized(sdkLock) {
         audioConferenceActive = false
+        // This controller is a singleton and outlives the engine, so an
+        // unclosed part-file handle would too.
+        pcmRecorder.clear()
+
         // Dispose ConnectionService
         context?.let { ctx ->
             PortsipConnectionService.dispose(ctx)
@@ -1194,6 +1272,8 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun unInitialize() = synchronized(sdkLock) {
         audioConferenceActive = false
+        // The sessions any open parts belong to are going away with the SDK.
+        pcmRecorder.clear()
         portSipSdk?.unRegisterServer(0)
         portSipSdk?.unInitialize()
         portSipSdk?.setOnPortSIPEvent(null)

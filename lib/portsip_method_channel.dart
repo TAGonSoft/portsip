@@ -1120,6 +1120,69 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Writes a session's raw audio stream to WAVE files.
+  ///
+  /// Invokes the native 'startPcmRecord' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> startPcmRecord({
+    required int sessionId,
+    required String recordFilePath,
+    required String recordFileName,
+  }) async {
+    final args = {
+      'sessionId': sessionId,
+      'recordFilePath': recordFilePath,
+      'recordFileName': recordFileName,
+    };
+    _logCall('startPcmRecord', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'startPcmRecord',
+        args,
+      );
+      _logResponse('startPcmRecord', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('startPcmRecord', e);
+      return -1;
+    } on MissingPluginException {
+      // Android only — iOS has no raw audio stream callback.
+      _logResponse('startPcmRecord', -1);
+      return -1;
+    }
+  }
+
+  /// Stops the raw-audio recording on a session.
+  ///
+  /// Invokes the native 'stopPcmRecord' method via MethodChannel.
+  ///
+  /// Native finishes the merge before answering, so this completes when the
+  /// file is on disk.
+  ///
+  /// Returns the finished recording's path, or null if nothing was captured.
+  @override
+  Future<String?> stopPcmRecord({required int sessionId}) async {
+    final args = {'sessionId': sessionId};
+    _logCall('stopPcmRecord', args);
+    try {
+      final result = await methodChannel.invokeMethod<String>(
+        'stopPcmRecord',
+        args,
+      );
+      _logResponse('stopPcmRecord', result);
+      return result;
+    } on PlatformException catch (e) {
+      _logError('stopPcmRecord', e);
+      return null;
+    } on MissingPluginException {
+      // Android only — iOS has no raw audio stream callback.
+      _logResponse('stopPcmRecord', null);
+      return null;
+    }
+  }
+
   /// Plays a file into the stream sent to the remote party.
   ///
   /// Invokes the native 'startPlayingFileToRemote' method via MethodChannel.

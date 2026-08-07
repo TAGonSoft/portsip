@@ -59,6 +59,9 @@ android {
         // but does NOT include the AAR in the plugin's output. The consuming app must
         // add the AAR as an implementation dependency in their own build.gradle.
         compileOnly(name: 'portsipvoipsdk', ext: 'aar')
+        // The test source set compiles against classes whose signatures mention
+        // SDK types. Compile-time only, so it adds nothing to the test runtime.
+        testCompileOnly(name: 'portsipvoipsdk', ext: 'aar')
 
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.mockito:mockito-core:5.0.0")

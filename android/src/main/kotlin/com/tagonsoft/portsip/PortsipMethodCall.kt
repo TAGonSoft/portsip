@@ -86,6 +86,12 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Stops the recording running on a session */
     STOP_RECORD("stopRecord"),
 
+    /** Starts writing a session's raw audio stream to a WAVE file */
+    START_PCM_RECORD("startPcmRecord"),
+
+    /** Stops the raw-audio recording on a session and finalises its file */
+    STOP_PCM_RECORD("stopPcmRecord"),
+
     /** Plays a file into the stream sent to the remote party */
     START_PLAYING_FILE_TO_REMOTE("startPlayingFileToRemote"),
 

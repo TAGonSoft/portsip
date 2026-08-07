@@ -62,6 +62,10 @@ void main() {
               return 0; // Success
             case 'stopRecord':
               return 0; // Success
+            case 'startPcmRecord':
+              return 0; // Success
+            case 'stopPcmRecord':
+              return '/tmp/recordings/call.wav'; // Finished recording
             case 'startPlayingFileToRemote':
               return 0; // Success
             case 'stopPlayingFileToRemote':
@@ -966,6 +970,90 @@ void main() {
     test('returns result from native', () async {
       final result = await platform.stopRecord(sessionId: 1);
       expect(result, 0);
+    });
+  });
+
+  group('startPcmRecord', () {
+    test('calls method channel with correct method name', () async {
+      await platform.startPcmRecord(
+        sessionId: 1,
+        recordFilePath: '/tmp/recordings',
+        recordFileName: 'call',
+      );
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'startPcmRecord');
+    });
+
+    test('passes the session, directory and file name', () async {
+      await platform.startPcmRecord(
+        sessionId: 7,
+        recordFilePath: '/tmp/recordings',
+        recordFileName: 'raw',
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 7);
+      expect(args['recordFilePath'], '/tmp/recordings');
+      expect(args['recordFileName'], 'raw');
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.startPcmRecord(
+        sessionId: 1,
+        recordFilePath: '/tmp/recordings',
+        recordFileName: 'call',
+      );
+      expect(result, 0);
+    });
+
+    test('returns -1 where the platform has no implementation', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+
+      final result = await platform.startPcmRecord(
+        sessionId: 1,
+        recordFilePath: '/tmp/recordings',
+        recordFileName: 'call',
+      );
+      expect(result, -1);
+    });
+  });
+
+  group('stopPcmRecord', () {
+    test('calls method channel with correct method name', () async {
+      await platform.stopPcmRecord(sessionId: 1);
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'stopPcmRecord');
+    });
+
+    test('passes the session id', () async {
+      await platform.stopPcmRecord(sessionId: 42);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 42);
+    });
+
+    test('returns the finished recording path from native', () async {
+      final result = await platform.stopPcmRecord(sessionId: 1);
+      expect(result, '/tmp/recordings/call.wav');
+    });
+
+    test('returns null when nothing was captured', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async => null);
+
+      final result = await platform.stopPcmRecord(sessionId: 1);
+      expect(result, isNull);
+    });
+
+    test('returns null where the platform has no implementation', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+
+      final result = await platform.stopPcmRecord(sessionId: 1);
+      expect(result, isNull);
     });
   });
 

@@ -4,24 +4,69 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.mockito.Mockito
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 /*
- * This demonstrates a simple unit test of the Kotlin portion of this plugin's implementation.
+ * Unit tests for the plugin's method-call routing.
  *
- * Once you have built the plugin's example app, you can run these tests from the command
- * line by running `./gradlew testDebugUnitTest` in the `example/android/` directory, or
- * you can run them directly from IDEs that support JUnit such as Android Studio.
+ * These run on a plain JVM, with no Android runtime and no PortSIP SDK, so they
+ * cover the edges that don't dispatch into PortsipController: the enum that maps
+ * Flutter's method-name strings onto handlers, and what happens to a name it
+ * doesn't recognise. Anything past that reaches the SDK and belongs in an
+ * instrumented test.
+ *
+ * Run with `./gradlew testDebugUnitTest` in `example/android/`, or from an IDE
+ * that supports JUnit.
  */
-
 internal class PortsipPluginTest {
+
     @Test
-    fun onMethodCall_getPlatformVersion_returnsExpectedValue() {
+    fun onMethodCall_unknownMethod_reportsNotImplemented() {
         val plugin = PortsipPlugin()
 
-        val call = MethodCall("getPlatformVersion", null)
-        val mockResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
-        plugin.onMethodCall(call, mockResult)
+        val result: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
+        plugin.onMethodCall(MethodCall("noSuchMethod", null), result)
 
-        Mockito.verify(mockResult).success("Android " + android.os.Build.VERSION.RELEASE)
+        Mockito.verify(result).notImplemented()
+        Mockito.verifyNoMoreInteractions(result)
+    }
+
+    @Test
+    fun fromMethodName_resolvesEveryDeclaredMethod() {
+        // The Dart side addresses these handlers by string. A typo in either
+        // enum column is otherwise invisible until the call silently returns
+        // MissingPluginException at runtime.
+        for (method in PortsipMethodCall.values()) {
+            assertEquals(
+                method,
+                PortsipMethodCall.fromMethodName(method.methodName),
+                "${method.name} does not resolve from its own method name"
+            )
+        }
+    }
+
+    @Test
+    fun fromMethodName_methodNamesAreUnique() {
+        // Two entries sharing a name means one of them is unreachable: the
+        // lookup returns whichever comes first in declaration order.
+        val duplicates = PortsipMethodCall.values()
+            .groupBy { it.methodName }
+            .filterValues { it.size > 1 }
+
+        assertEquals(emptyMap(), duplicates, "duplicate method names")
+    }
+
+    @Test
+    fun fromMethodName_unknownNameIsNull() {
+        assertNull(PortsipMethodCall.fromMethodName("noSuchMethod"))
+        assertNull(PortsipMethodCall.fromMethodName(""))
+    }
+
+    @Test
+    fun fromMethodName_pcmRecordingIsWired() {
+        assertNotNull(PortsipMethodCall.fromMethodName("startPcmRecord"))
+        assertNotNull(PortsipMethodCall.fromMethodName("stopPcmRecord"))
     }
 }
