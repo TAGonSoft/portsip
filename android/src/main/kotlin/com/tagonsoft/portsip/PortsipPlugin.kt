@@ -25,11 +25,7 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     private lateinit var channel: MethodChannel
 
-    /**
-     * Returns a result produced off the platform thread back onto it. Built on
-     * first use: constructing the plugin must not reach for a Looper, which a
-     * JVM unit test has no way to provide.
-     */
+    /** Returns a result produced off the platform thread back onto it. */
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
     companion object {
@@ -289,10 +285,8 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 PortsipMethodCall.STOP_PCM_RECORD -> {
                     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
                     PortsipLogger.logCall(COMPONENT, "stopPcmRecord", arguments)
-                    // Merging the per-direction parts rewrites the whole
-                    // recording, so it finishes on the recorder's thread and
-                    // answers from there. A MethodChannel.Result must be
-                    // completed on the platform thread.
+                    // The merge answers from the recorder's thread, and a
+                    // MethodChannel.Result must be completed on the platform one.
                     PortsipController.shared.stopPcmRecord(arguments) { path ->
                         mainHandler.post {
                             PortsipLogger.logResponse(COMPONENT, "stopPcmRecord", path)

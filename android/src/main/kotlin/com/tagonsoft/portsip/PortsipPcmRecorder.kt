@@ -19,16 +19,15 @@ import java.util.concurrent.Executors
  *
  * A session reports one stream per direction. Each is written to its own file
  * while the call runs, then interleaved into one stereo recording when it stops:
- * what this side sent on the left, what it received on the right. Keeping the
- * directions on their own channels avoids summing two loud sides into clipping,
- * and leaves the speakers separable for anything reading the file later.
+ * what this side sent on the left, what it received on the right. Separate
+ * channels avoid summing two loud sides into clipping, and leave the speakers
+ * separable for anything reading the file later.
  *
  * Threading: frames arrive on an SDK thread while start/stop come from the
  * platform channel, so every entry point is synchronized — but only long enough
- * to hand a session over. Merging rewrites every byte a recording holds, far too
- * much work for the platform thread, so [stop] detaches the session under the
- * lock and merges it on [finalizer]. Nothing here calls back into the SDK, which
- * the raw callback forbids.
+ * to hand a session over. Merging rewrites every byte a recording holds, so
+ * [stop] detaches the session under the lock and merges it on [finalizer].
+ * Nothing here calls back into the SDK, which the raw callback forbids.
  */
 class PortsipPcmRecorder {
 
@@ -178,14 +177,6 @@ class PortsipPcmRecorder {
      * Appends one frame. Ignored unless [start] ran for this session, so frames
      * arriving before or after a recording can't create stray files.
      *
-     * A stream can change rate after it opens — the receive path starts at the
-     * jitter buffer's default and drops to the negotiated codec's rate once the
-     * answer arrives. Keeping the first rate would stamp the wrong one into the
-     * header and play the whole recording an octave out, so a change inside the
-     * settling window restarts the file, costing the fraction of a second before
-     * the codec settles. A change after that is treated as mid-call and the
-     * established rate is kept — see the branch below for why.
-     *
      * Runs on the SDK's audio thread: everything the disk can throw is caught
      * here, because an exception let loose in a native callback takes the
      * process with it.
@@ -210,6 +201,10 @@ class PortsipPcmRecorder {
             return
         }
 
+        // The receive path opens at the jitter buffer's default and adopts the
+        // negotiated codec's rate once the answer arrives. Keeping the first
+        // rate would stamp the wrong one into the header and play the whole
+        // file an octave out, so a change while settling restarts it.
         if (writer.sampleRate != sampleRate) {
             if (seconds(writer.sampleRate, writer.dataBytes, 1) <= SETTLE_SECONDS) {
                 PortsipLogger.d(
@@ -225,10 +220,9 @@ class PortsipPcmRecorder {
                     return
                 }
             } else if (!writer.rateChangedMidCall) {
-                // Past the settling window this is a real mid-call change — a
-                // re-INVITE, or the stream rebuilt after a hold. Restarting here
-                // would throw away everything recorded so far, which is a far
-                // worse outcome than a stretch that plays at the wrong speed.
+                // A real mid-call change — a re-INVITE, or the stream rebuilt
+                // after a hold. Restarting would throw away everything recorded
+                // so far, worse than a stretch that plays at the wrong speed.
                 writer.rateChangedMidCall = true
                 PortsipLogger.d(
                     COMPONENT,
@@ -341,8 +335,8 @@ class PortsipPcmRecorder {
             runCatching { output.delete() }
             null
         } finally {
-            // Parts go whether or not the merge worked: a stranded .partN is no
-            // use to anyone and nothing else will ever come back for it.
+            // Parts go whether or not the merge worked — nothing comes back for
+            // them either way.
             session.writers.values.forEach { runCatching { it.file.delete() } }
         }
     }
@@ -367,8 +361,8 @@ class PortsipPcmRecorder {
             // a channel. The longest part alone is the honest result.
             val longest = parts.maxBy { it.dataBytes }
             if (parts.size > 1) {
-                // A direction is being dropped, not mixed: worth more than a
-                // debug line, because the file silently holds half the call.
+                // Logged as an error, not debug: the file silently holds half
+                // the call.
                 PortsipLogger.e(
                     COMPONENT,
                     "cannot interleave ${parts.map { "type=${it.callbackType}@${it.sampleRate}Hz" }} " +
@@ -383,7 +377,10 @@ class PortsipPcmRecorder {
             return
         }
 
-        val monoBytes = maxOf(left.dataBytes, right.dataBytes)
+        // Rounded down to a whole sample: a trailing odd byte is half a sample,
+        // and carrying it would leave the interleave loop a byte short of what
+        // the chunk write emits.
+        val monoBytes = maxOf(left.dataBytes, right.dataBytes) / BYTES_PER_SAMPLE * BYTES_PER_SAMPLE
         RandomAccessFile(output, "rw").use { out ->
             out.setLength(0)
             out.write(header(rate, monoBytes * 2, 2))
@@ -440,10 +437,9 @@ class PortsipPcmRecorder {
     }
 
     /**
-     * Gives up on a recording the disk refused. Dropping it keeps one failure
-     * from logging on every frame that follows, and lets [stop] report nothing
-     * captured rather than hand back a path to a file that stops part way
-     * through the call.
+     * Gives up on a recording the disk refused, so [stop] reports nothing
+     * captured rather than handing back a file that stops part way through the
+     * call — and one failure doesn't log on every frame that follows.
      */
     private fun abandon(sessionId: Long, what: String, cause: Exception) {
         PortsipLogger.e(COMPONENT, "$what for $sessionId, dropping the recording", cause)
@@ -459,15 +455,11 @@ class PortsipPcmRecorder {
     }
 
     /**
-     * Removes part files stranded in [directoryPath] — a process killed
-     * mid-call leaves them behind, and since recordings are normally named per
-     * call, nothing ever comes back for them under that name again.
-     *
-     * Sweeps the whole directory rather than only the name being started, which
-     * is why it has to skip the parts a live recording owns: several legs of a
-     * conference record into one directory at the same time, and a recording
-     * already handed to [finalizer] is still reading its parts even though it
-     * has left [sessions].
+     * Removes part files stranded in [directoryPath] by a process killed
+     * mid-call. Sweeping the whole directory means skipping the parts a live
+     * recording owns: conference legs record into one directory at the same
+     * time, and a recording handed to [finalizer] is still reading its parts
+     * even though it has left [sessions].
      */
     private fun sweep(directoryPath: String) {
         val owned = (sessions.values + merging)

@@ -1008,9 +1008,11 @@ class Portsip {
   ///
   /// [recordFilePath] must already exist; it is not created.
   ///
-  /// Android only for now; returns -1 elsewhere.
+  /// **Android only** - On iOS, this returns -1 without any effect, as the
+  /// iOS SDK has no raw audio stream callback.
   ///
-  /// Returns 0 if successful, error code otherwise.
+  /// Returns 0 if successful, error code otherwise. A missing
+  /// [recordFilePath] returns -1.
   ///
   /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
   Future<int> startPcmRecord({
@@ -1036,7 +1038,8 @@ class Portsip {
   ///
   /// [sessionId] - The session ID whose recording should stop.
   ///
-  /// **Android only** — returns null on iOS.
+  /// **Android only** - On iOS, this returns null without any effect, as the
+  /// iOS SDK has no raw audio stream callback.
   ///
   /// Returns the finished recording's path, or null if nothing was captured.
   ///
