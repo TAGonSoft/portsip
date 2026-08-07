@@ -1,3 +1,18 @@
+## 0.1.5
+
+* **Feature (Android)**: raw audio recording.
+`startPcmRecord({sessionId, recordFilePath, recordFileName})` and
+`stopPcmRecord({sessionId})` write the PCM the SDK hands to its audio stream
+callback, instead of routing it through the SDK's own recorder as
+[startRecord] does. Both directions land in one stereo
+`<recordFileName>.wav` — sent audio on the left channel, received on the right
+— so neither party can clip the other and the two stay separable; a call that
+produced only one direction stays mono. `recordFilePath` must be an existing
+directory. `stopPcmRecord` merges the per-direction parts off the platform
+thread and completes with the finished recording's path, or null if nothing
+was captured; stopping from an `onInviteClosed` handler still returns the
+recording.
+
 ## 0.1.4
 
 * **Feature**: call recording. `startRecord({sessionId, recordFilePath,
