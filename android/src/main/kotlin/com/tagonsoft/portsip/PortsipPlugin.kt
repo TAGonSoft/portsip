@@ -25,7 +25,11 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     private lateinit var channel: MethodChannel
 
-    /** Returns a result produced off the platform thread back onto it. */
+    /**
+     * Returns a result produced off the platform thread back onto it. Built on
+     * first use: constructing the plugin must not reach for a Looper, which the
+     * JVM unit tests have no way to provide.
+     */
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
     companion object {
