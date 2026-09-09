@@ -38,6 +38,9 @@ class PortsipController private constructor() : OnPortSIPEvent {
     companion object {
         private const val COMPONENT = "Controller"
 
+        /** Digest credential in an Authorization header, masked before logging. */
+        private val credentialRegex = Regex("response=\"[^\"]*\"", RegexOption.IGNORE_CASE)
+
         /**
          * Shared singleton instance of the PortsipController
          */
@@ -486,6 +489,26 @@ class PortsipController private constructor() : OnPortSIPEvent {
     fun getStatistics(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
         val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
         return portSipSdk?.getStatistics(sessionId) ?: -1
+    }
+
+    /** Enables/disables QoS DSCP marking on the audio channel (46 when on, 0 when off). */
+    fun enableAudioQos(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val enable = arguments["enable"] as? Boolean ?: false
+        return portSipSdk?.enableAudioQos(enable) ?: -1
+    }
+
+    /**
+     * Enables or disables the SDK's SIP message callbacks, which mirror sent
+     * and received SIP messages into the plugin logs.
+     * @param arguments Map containing sending and received flags
+     * @return 0 on success, error code otherwise
+     */
+    fun enableCallbackSignaling(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sending = (arguments["sending"] as? Boolean) ?: false
+        val received = (arguments["received"] as? Boolean) ?: false
+        portSipSdk?.enableCallbackSignaling(sending, received)
+        PortsipLogger.d(COMPONENT, "Signaling callbacks: sending=$sending received=$received")
+        return 0
     }
 
     /**
@@ -1171,6 +1194,27 @@ class PortsipController private constructor() : OnPortSIPEvent {
         PortsipEventBridge.shared.sendEvent("onRemoteUnHold", eventData)
     }
 
+    // MARK: - SIP Signaling
+
+    // Off unless the host calls enableCallbackSignaling. The SDK hands over a
+    // copy of the message, so these callbacks cannot affect what is on the wire.
+
+    override fun onReceivedSignaling(sessionId: Long, message: String?) {
+        PortsipLogger.d("Signaling", "◀ RECV (session $sessionId)\n${redactCredentials(message)}")
+    }
+
+    override fun onSendingSignaling(sessionId: Long, message: String?) {
+        PortsipLogger.d("Signaling", "▶ SEND (session $sessionId)\n${redactCredentials(message)}")
+    }
+
+    /**
+     * Masks the digest `response="..."` in Authorization headers. The hash is
+     * replayable until the nonce expires, and the rest of the header (realm,
+     * nonce, username, algorithm) is what makes auth failures diagnosable.
+     */
+    private fun redactCredentials(message: String?): String =
+        message?.replace(credentialRegex, "response=\"<redacted>\"") ?: ""
+
     // MARK: - Unused Delegate Methods (Required by Interface - Empty Implementations)
 
     override fun onInviteSessionProgress(sessionId: Long, audioCodecNames: String?, videoCodecNames: String?, existsEarlyMedia: Boolean, existsAudio: Boolean, existsVideo: Boolean, sipMessage: String?) {}
@@ -1184,8 +1228,6 @@ class PortsipController private constructor() : OnPortSIPEvent {
     override fun onTransferRinging(sessionId: Long) {}
     override fun onACTVTransferSuccess(sessionId: Long) {}
     override fun onACTVTransferFailure(sessionId: Long, reason: String?, code: Int) {}
-    override fun onReceivedSignaling(sessionId: Long, message: String?) {}
-    override fun onSendingSignaling(sessionId: Long, message: String?) {}
     override fun onWaitingVoiceMessage(messageAccount: String?, urgentNewMessageCount: Int, urgentOldMessageCount: Int, newMessageCount: Int, oldMessageCount: Int) {}
     override fun onWaitingFaxMessage(messageAccount: String?, urgentNewMessageCount: Int, urgentOldMessageCount: Int, newMessageCount: Int, oldMessageCount: Int) {}
     override fun onRecvDtmfTone(sessionId: Long, tone: Int) {}

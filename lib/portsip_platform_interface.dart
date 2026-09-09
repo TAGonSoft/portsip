@@ -610,6 +610,42 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('getStatistics has not been implemented.');
   }
 
+  /// Enables/disables QoS DSCP marking on the audio channel: the SDK sets DSCP
+  /// 46 (Expedited Forwarding) when enabled, 0 when disabled.
+  ///
+  /// Best-effort — many Wi-Fi and carrier networks rewrite or ignore DSCP.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> enableAudioQos({required bool enable}) async {
+    throw UnimplementedError('enableAudioQos has not been implemented.');
+  }
+
+  /// Enables or disables the SDK's SIP message callbacks, which mirror every
+  /// sent and/or received SIP message into the platform logs.
+  ///
+  /// Purely diagnostic: the callbacks hand over a copy of each message and
+  /// cannot alter, delay or block what goes on the wire. Both directions are
+  /// off by default.
+  ///
+  /// Output goes to the platform console (Logcat / Xcode) and appears only
+  /// while [setLogsEnabled] is on. Digest `response="..."` values are redacted,
+  /// but the messages still carry SIP URIs, Call-IDs and nonces — keep this off
+  /// in release builds.
+  ///
+  /// Parameters:
+  /// - [sending]: Whether to log SIP messages the SDK sends
+  /// - [received]: Whether to log SIP messages the SDK receives
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> enableCallbackSignaling({
+    required bool sending,
+    required bool received,
+  }) async {
+    throw UnimplementedError(
+      'enableCallbackSignaling has not been implemented.',
+    );
+  }
+
   /// Starts recording the call on [sessionId] to
   /// `recordFilePath`/`recordFileName`. `recordFileName` carries no
   /// extension — the SDK appends the one matching [fileFormat].

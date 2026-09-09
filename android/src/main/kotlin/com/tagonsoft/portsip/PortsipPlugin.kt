@@ -254,6 +254,22 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.ENABLE_AUDIO_QOS -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "enableAudioQos", arguments)
+                    val resultValue = PortsipController.shared.enableAudioQos(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "enableAudioQos", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.ENABLE_CALLBACK_SIGNALING -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "enableCallbackSignaling", arguments)
+                    val resultValue = PortsipController.shared.enableCallbackSignaling(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "enableCallbackSignaling", resultValue)
+                    result.success(resultValue)
+                }
+
                 PortsipMethodCall.GET_STATISTICS -> {
                     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
                     PortsipLogger.logCall(COMPONENT, "getStatistics", arguments)

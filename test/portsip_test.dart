@@ -179,6 +179,24 @@ void main() {
       );
     });
 
+    test('throws PortsipStateException when calling enableAudioQos() before initialize()', () {
+      final portsip = Portsip();
+
+      expect(
+        () => portsip.enableAudioQos(enable: true),
+        throwsA(isA<PortsipStateException>()),
+      );
+    });
+
+    test('throws PortsipStateException when calling enableCallbackSignaling() before initialize()', () {
+      final portsip = Portsip();
+
+      expect(
+        () => portsip.enableCallbackSignaling(sending: true, received: true),
+        throwsA(isA<PortsipStateException>()),
+      );
+    });
+
     test('throws PortsipStateException when calling methods after dispose()', () async {
       final portsip = Portsip();
 

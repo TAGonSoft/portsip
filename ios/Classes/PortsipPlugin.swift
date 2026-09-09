@@ -178,6 +178,20 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.sendDtmf(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "sendDtmf", resultValue)
             result(resultValue)
+        case .enableAudioQos:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "enableAudioQos", arguments)
+            let resultValue = PortsipController.shared.enableAudioQos(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "enableAudioQos", resultValue)
+            result(resultValue)
+
+        case .enableCallbackSignaling:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "enableCallbackSignaling", arguments)
+            let resultValue = PortsipController.shared.enableCallbackSignaling(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "enableCallbackSignaling", resultValue)
+            result(resultValue)
+
         case .getStatistics:
             let arguments = call.arguments as? [String: Any] ?? [:]
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "getStatistics", arguments)

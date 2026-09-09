@@ -79,6 +79,10 @@ enum class PortsipMethodCall(val methodName: String) {
 
     /** Requests RTP media statistics for a session (result via onStatistics event) */
     GET_STATISTICS("getStatistics"),
+    ENABLE_AUDIO_QOS("enableAudioQos"),
+
+    /** Enables/disables logging of sent and received SIP messages */
+    ENABLE_CALLBACK_SIGNALING("enableCallbackSignaling"),
 
     /** Starts recording the call on a session */
     START_RECORD("startRecord"),

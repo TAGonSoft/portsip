@@ -21,7 +21,7 @@ A Flutter plugin that integrates the PortSIP VoIP SDK, enabling SIP-based voice 
 
 This plugin provides a cross-platform Dart API built on top of the native PortSIP SDK for iOS and Android, simplifying VoIP integration in Flutter apps.
 
-> **Important:** The PortSIP SDK binaries are **not included** with this plugin. You must download the SDK (V19.6.0) from PortSIP and configure it in your app. See the [SDK Setup](#sdk-setup-required) section below.
+> **Important:** The PortSIP SDK binaries are **not included** with this plugin. You must download the SDK (V19.6.2) from PortSIP and configure it in your app. See the [SDK Setup](#sdk-setup-required) section below.
 
 ## Resources
 
@@ -39,6 +39,8 @@ This plugin provides a cross-platform Dart API built on top of the native PortSI
 - **Play to Remote** - Play an audio file into the outgoing stream (`startPlayingFileToRemote`)
 - **Audio Codecs** - Configure preferred audio codecs (OPUS, G.722, G.729, etc.)
 - **Audio Processing** - AEC, AGC, ANS, CNG, VAD for enhanced audio quality
+- **Audio QoS** - DSCP marking on the audio channel (`enableAudioQos`)
+- **SIP Signaling Logs** - Mirror sent and received SIP messages into the platform logs (`enableCallbackSignaling`)
 - **SRTP Encryption** - Configurable secure RTP policy for encrypted calls
 - **iOS CallKit** - Native iOS call UI integration
 - **Android ConnectionService** - Native Android call UI integration (system call screen)
@@ -65,7 +67,7 @@ dependencies:
 
 ### SDK Setup (Required)
 
-This plugin requires the **PortSIP VoIP SDK V19.6.0** native binaries, which are **not included** with the plugin. You must download and configure them for each platform.
+This plugin requires the **PortSIP VoIP SDK V19.6.2** native binaries, which are **not included** with the plugin. You must download and configure them for each platform.
 
 **Download the SDK:**
 1. Visit the [PortSIP VoIP SDK download page](https://www.portsip.com/download-portsip-voip-sdk/)
@@ -592,6 +594,7 @@ The plugin provides audio processing features to enhance call quality:
 | `enableAudioManager` | Android | Required for DTMF; pass `false` when routing audio through ConnectionService |
 | `setSrtpPolicy` | Both | SRTP encryption: 0=None, 1=Prefer, 2=Force |
 | `enable3GppTags` | Both | 3GPP headers for carrier compatibility |
+| `enableAudioQos` | Both | DSCP marking on the audio channel: 46 (Expedited Forwarding) when on, 0 when off |
 
 > **Note:** On iOS, AEC/AGC/ANS are handled at the system level via AVAudioSession.
 
@@ -600,6 +603,7 @@ The plugin provides audio processing features to enhance call quality:
 await portsip.enableCNG(enable: true);
 await portsip.enableVAD(enable: true);
 await portsip.setSrtpPolicy(policy: 1); // Prefer SRTP
+await portsip.enableAudioQos(enable: true); // Best-effort: many networks rewrite DSCP
 
 // Android-specific
 if (Platform.isAndroid) {
@@ -708,6 +712,24 @@ await portsip.stopPlayingFileToRemote(sessionId: sessionId);
 
 > Playback is per session, like recording. To reach every participant of a
 > conference, play the file on each leg.
+
+## SIP Signaling Logs
+
+`enableCallbackSignaling` mirrors the SIP messages the SDK sends and/or receives
+into the platform logs — Logcat on Android, the Xcode console on iOS. It is a
+diagnostic aid only: the SDK hands the plugin a copy of each message, so turning
+it on cannot alter, delay or block what goes on the wire.
+
+```dart
+portsip.setLogsEnabled(enabled: true); // signaling logs also require this
+await portsip.enableCallbackSignaling(sending: true, received: true);
+```
+
+Both directions are off by default. Messages are logged only while
+`setLogsEnabled` is on, and the digest `response="..."` in `Authorization` and
+`Proxy-Authorization` headers is masked before logging. The rest of each message
+— SIP URIs, `Call-ID`, nonces, `User-Agent` — is logged verbatim, so leave this
+off in release builds.
 
 ## Events Reference
 
