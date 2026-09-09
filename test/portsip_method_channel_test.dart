@@ -86,6 +86,10 @@ void main() {
               return 0; // Success
             case 'enableVAD':
               return 0; // Success
+            case 'enableAudioQos':
+              return 0; // Success
+            case 'enableCallbackSignaling':
+              return 0; // Success
             case 'setLogsEnabled':
               return null; // void method
             default:
@@ -1249,6 +1253,65 @@ void main() {
 
     test('returns result from native', () async {
       final result = await platform.enable3GppTags(enable: true);
+      expect(result, 0);
+    });
+  });
+
+  group('enableAudioQos', () {
+    test('calls method channel with correct method name', () async {
+      await platform.enableAudioQos(enable: true);
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'enableAudioQos');
+    });
+
+    test('passes enable=true correctly', () async {
+      await platform.enableAudioQos(enable: true);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['enable'], true);
+    });
+
+    test('passes enable=false correctly', () async {
+      await platform.enableAudioQos(enable: false);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['enable'], false);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.enableAudioQos(enable: true);
+      expect(result, 0);
+    });
+  });
+
+  group('enableCallbackSignaling', () {
+    test('calls method channel with correct method name', () async {
+      await platform.enableCallbackSignaling(sending: true, received: true);
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'enableCallbackSignaling');
+    });
+
+    test('passes both directions correctly', () async {
+      await platform.enableCallbackSignaling(sending: true, received: false);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sending'], true);
+      expect(args['received'], false);
+    });
+
+    test('passes both directions off correctly', () async {
+      await platform.enableCallbackSignaling(sending: false, received: false);
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sending'], false);
+      expect(args['received'], false);
+    });
+
+    test('returns result from native', () async {
+      final result =
+          await platform.enableCallbackSignaling(sending: true, received: true);
       expect(result, 0);
     });
   });

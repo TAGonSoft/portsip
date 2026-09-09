@@ -345,8 +345,10 @@ class MethodChannelPortsip extends PortsipPlatform {
     };
     _logCall('endCallAndResume', args);
     try {
-      final result =
-          await methodChannel.invokeMethod<int>('endCallAndResume', args);
+      final result = await methodChannel.invokeMethod<int>(
+        'endCallAndResume',
+        args,
+      );
       _logResponse('endCallAndResume', result);
       return result ?? -1;
     } on PlatformException catch (e) {
@@ -1038,6 +1040,54 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Enables/disables QoS DSCP marking on the audio channel.
+  ///
+  /// Invokes the native 'enableAudioQos' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> enableAudioQos({required bool enable}) async {
+    final args = {'enable': enable};
+    _logCall('enableAudioQos', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'enableAudioQos',
+        args,
+      );
+      _logResponse('enableAudioQos', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('enableAudioQos', e);
+      return -1;
+    }
+  }
+
+  /// Enables/disables the SDK's SIP message callbacks, which mirror sent and
+  /// received SIP messages into the platform logs.
+  ///
+  /// Invokes the native 'enableCallbackSignaling' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> enableCallbackSignaling({
+    required bool sending,
+    required bool received,
+  }) async {
+    final args = {'sending': sending, 'received': received};
+    _logCall('enableCallbackSignaling', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'enableCallbackSignaling',
+        args,
+      );
+      _logResponse('enableCallbackSignaling', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('enableCallbackSignaling', e);
+      return -1;
+    }
+  }
+
   /// Requests RTP statistics for a session; the result arrives as an
   /// `onStatistics` event on the events stream.
   ///
@@ -1089,10 +1139,7 @@ class MethodChannelPortsip extends PortsipPlatform {
     };
     _logCall('startRecord', args);
     try {
-      final result = await methodChannel.invokeMethod<int>(
-        'startRecord',
-        args,
-      );
+      final result = await methodChannel.invokeMethod<int>('startRecord', args);
       _logResponse('startRecord', result);
       return result ?? -1;
     } on PlatformException catch (e) {

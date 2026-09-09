@@ -702,6 +702,29 @@ class PortsipController: NSObject {
         }
     }
 
+    /// Enables/disables QoS DSCP marking on the audio channel (46 when on, 0 when off).
+    /// - Parameter arguments: Dictionary containing enable.
+    /// - Returns: 0 on success, error code otherwise.
+    func enableAudioQos(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let enable = arguments["enable"] as? Bool ?? false
+            return Int(portSIPSDK.enableAudioQos(enable))
+        }
+    }
+
+    /// Enables/disables the SDK's SIP message callbacks, which mirror sent and
+    /// received SIP messages into the plugin logs.
+    /// - Parameter arguments: Dictionary containing sending and received.
+    /// - Returns: 0 on success.
+    func enableCallbackSignaling(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sending = arguments["sending"] as? Bool ?? false
+            let received = arguments["received"] as? Bool ?? false
+            portSIPSDK.enableCallbackSignaling(sending, enableReceived: received)
+            return 0
+        }
+    }
+
     /// Starts recording a session to a file.
     ///
     /// Recording is per session: the SDK has no conference-level recorder, so a
@@ -1388,6 +1411,31 @@ extension PortsipController: PortSIPEventDelegate {
         PortsipEventBridge.shared.sendEvent(name: "onRemoteUnHold", data: eventData)
     }
 
+    // MARK: - SIP Signaling
+
+    // Off unless the host calls enableCallbackSignaling. The SDK hands over a
+    // copy of the message, so these callbacks cannot affect what is on the wire.
+
+    func onReceivedSignaling(_ sessionId: Int, message: String!) {
+        PortsipLogger.d("Signaling", "◀ RECV (session \(sessionId))\n\(PortsipController.redactCredentials(message))")
+    }
+
+    func onSendingSignaling(_ sessionId: Int, message: String!) {
+        PortsipLogger.d("Signaling", "▶ SEND (session \(sessionId))\n\(PortsipController.redactCredentials(message))")
+    }
+
+    /// Masks the digest `response="..."` in Authorization headers. The hash is
+    /// replayable until the nonce expires, and the rest of the header (realm,
+    /// nonce, username, algorithm) is what makes auth failures diagnosable.
+    private static func redactCredentials(_ message: String?) -> String {
+        guard let message = message else { return "" }
+        return message.replacingOccurrences(
+            of: "response=\"[^\"]*\"",
+            with: "response=\"<redacted>\"",
+            options: [.regularExpression, .caseInsensitive]
+        )
+    }
+
     // MARK: - Unused Delegate Methods (Required by Protocol - Empty Implementations)
 
     func onInviteSessionProgress(_ sessionId: Int, audioCodecs: String!, videoCodecs: String!, existsEarlyMedia: Bool, existsAudio: Bool, existsVideo: Bool, sipMessage: String!) {}
@@ -1402,8 +1450,6 @@ extension PortsipController: PortSIPEventDelegate {
     func onTransferRinging(_ sessionId: Int) {}
     func onACTVTransferSuccess(_ sessionId: Int) {}
     func onACTVTransferFailure(_ sessionId: Int, reason: String!, code: Int32) {}
-    func onReceivedSignaling(_ sessionId: Int, message: String!) {}
-    func onSendingSignaling(_ sessionId: Int, message: String!) {}
     func onWaitingVoiceMessage(_ messageAccount: String!, urgentNewMessageCount: Int32, urgentOldMessageCount: Int32, newMessageCount: Int32, oldMessageCount: Int32) {}
     func onWaitingFaxMessage(_ messageAccount: String!, urgentNewMessageCount: Int32, urgentOldMessageCount: Int32, newMessageCount: Int32, oldMessageCount: Int32) {}
     func onRecvDtmfTone(_ sessionId: Int, tone: Int32) {}
@@ -1429,7 +1475,8 @@ extension PortsipController: PortSIPEventDelegate {
         ]
         PortsipEventBridge.shared.sendEvent(name: "onStatistics", data: eventData)
     }
-    func onRTPPacketCallback(_ sessionId: Int, mediaType: Int32, direction: DIRECTION_MODE, rtpPacket: UnsafeMutablePointer<UInt8>!, packetSize: Int32) {}
+    // SDK 19.6.2: returns the new size when the packet is modified, 0 when untouched.
+    func onRTPPacketCallback(_ sessionId: Int, mediaType: Int32, direction: DIRECTION_MODE, rtpPacket: UnsafeMutablePointer<UInt8>!, packetSize: Int32) -> Int32 { 0 }
     func onAudioRawCallback(_ sessionId: Int, audioCallbackMode: Int32, data: UnsafeMutablePointer<UInt8>!, dataLength: Int32, samplingFreqHz: Int32) {}
     func onVideoRawCallback(_ sessionId: Int, videoCallbackMode: Int32, width: Int32, height: Int32, data: UnsafeMutablePointer<UInt8>!, dataLength: Int32) -> Int32 { return 0 }
 }

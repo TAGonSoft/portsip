@@ -414,7 +414,9 @@ class Portsip {
   /// Throws [PortsipStateException] if the SDK is not initialized or disposed.
   Future<int> joinToConference({required int sessionId}) async {
     _checkInitialized();
-    return await PortsipPlatform.instance.joinToConference(sessionId: sessionId);
+    return await PortsipPlatform.instance.joinToConference(
+      sessionId: sessionId,
+    );
   }
 
   /// Remove a session from the existing conference.
@@ -939,6 +941,48 @@ class Portsip {
   Future<int> getStatistics({required int sessionId}) async {
     _checkInitialized();
     return await PortsipPlatform.instance.getStatistics(sessionId: sessionId);
+  }
+
+  /// Enable or disable QoS DSCP marking on the audio channel.
+  ///
+  /// The SDK marks audio packets DSCP 46 (Expedited Forwarding) when enabled,
+  /// 0 when disabled. Best-effort: many Wi-Fi and carrier networks rewrite or
+  /// ignore DSCP.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> enableAudioQos({required bool enable}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.enableAudioQos(enable: enable);
+  }
+
+  /// Mirror sent and/or received SIP messages into the platform logs.
+  ///
+  /// A diagnostic aid for SIP-level troubleshooting: the SDK hands the plugin a
+  /// copy of each message, so enabling this cannot alter, delay or block what
+  /// goes on the wire. Both directions are off by default.
+  ///
+  /// Messages are logged to Logcat on Android and the Xcode console on iOS, and
+  /// only while [setLogsEnabled] is on. Digest `response="..."` values are
+  /// redacted; SIP URIs, Call-IDs and nonces still appear, so leave this off in
+  /// release builds.
+  ///
+  /// [sending] - true to log messages the SDK sends
+  /// [received] - true to log messages the SDK receives
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> enableCallbackSignaling({
+    required bool sending,
+    required bool received,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.enableCallbackSignaling(
+      sending: sending,
+      received: received,
+    );
   }
 
   /// Start recording the call on a session.

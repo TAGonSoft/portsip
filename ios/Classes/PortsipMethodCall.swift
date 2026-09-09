@@ -73,6 +73,12 @@ enum PortsipMethodCall: String {
     /// Requests RTP media statistics for a session (result via onStatistics event)
     case getStatistics = "getStatistics"
 
+    /// Enables/disables DSCP marking on the audio channel
+    case enableAudioQos = "enableAudioQos"
+
+    /// Enables/disables logging of sent and received SIP messages
+    case enableCallbackSignaling = "enableCallbackSignaling"
+
     /// Starts recording the call on a session
     case startRecord = "startRecord"
 
