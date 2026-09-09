@@ -1,4 +1,4 @@
-## 0.2.0
+## 0.2.1
 
 * **Breaking**: the plugin now requires **PortSIP VoIP SDK V19.6.2**. The SDK's
 `onRTPPacketCallback` gained a return value in 19.6.2, so building against
@@ -8,6 +8,10 @@ upgrading.
 * **Feature**: `enableCallbackSignaling({sending, received})`, wired on both iOS
 and Android. Mirrors the SIP messages the SDK sends and/or receives into the
 platform logs (Logcat / Xcode console).
+
+## 0.2.0
+
+* **Retracted — do not use.** Published in error, shipped 0.1.5's code. Use 0.2.1
 
 ## 0.1.5
 
