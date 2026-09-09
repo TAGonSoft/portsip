@@ -293,12 +293,19 @@ class Portsip {
   /// [displayName] - Name the system call UI shows for the callee. The number
   /// is shown when omitted. Set it at call time: iOS does not reliably honor
   /// display updates on outgoing calls after they start.
+  ///
+  /// [displayNumber] - Number the system call UI shows and stores in the OS
+  /// call history. Defaults to [callee]. Set it when the SIP destination
+  /// differs from the number the user should see — a server that requires
+  /// bare digits still wants an E.164 number in the call log, which is what
+  /// the OS can format and dial back.
   Future<int> makeCall({
     required String callee,
     required bool sendSdp,
     required bool videoCall,
     bool reportToConnectionService = true,
     String? displayName,
+    String? displayNumber,
   }) async {
     _checkInitialized();
     return await PortsipPlatform.instance.makeCall(
@@ -307,6 +314,7 @@ class Portsip {
       videoCall: videoCall,
       reportToConnectionService: reportToConnectionService,
       displayName: displayName,
+      displayNumber: displayNumber,
     );
   }
 

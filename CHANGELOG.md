@@ -1,3 +1,11 @@
+## 0.2.2
+
+* **Feature**: `makeCall({displayNumber})` — the number the system call UI shows
+and the OS call history stores, independent of the SIP destination. Defaults to
+`callee`, so existing callers are unaffected. Use it when the server requires a
+differently formatted destination than the one the user should see: the OS can
+only format and dial back a number it can parse.
+
 ## 0.2.1
 
 * **Breaking**: the plugin now requires **PortSIP VoIP SDK V19.6.2**. The SDK's

@@ -537,6 +537,7 @@ class PortsipController: NSObject {
     /// Initiates an outgoing call to the specified callee.
     /// - Parameter arguments: Dictionary containing call parameters:
     ///   - callee: The SIP URI or phone number to call
+    ///   - displayNumber: Number shown in the system call UI (callee if absent)
     ///   - sendSdp: Whether to send SDP in INVITE (default: true)
     ///   - videoCall: Whether this is a video call (default: false)
     /// - Returns: Session ID on success, negative error code on failure
@@ -549,6 +550,9 @@ class PortsipController: NSObject {
             // a single system call (one CallKit call).
             let reportToConnectionService = arguments["reportToConnectionService"] as? Bool ?? true
             let displayName = arguments["displayName"] as? String
+            // The number the system call UI shows; the SIP destination may be
+            // formatted differently (see makeCall docs).
+            let displayNumber = arguments["displayNumber"] as? String
 
             let sessionId = portSIPSDK.call(callee, sendSdp: sendSdp, videoCall: videoCall)
 
@@ -569,7 +573,8 @@ class PortsipController: NSObject {
                         sessionId: Int(sessionId),
                         callee: callee,
                         hasVideo: videoCall,
-                        displayName: displayName
+                        displayName: displayName,
+                        displayNumber: displayNumber
                     )
                 }
             }

@@ -217,6 +217,7 @@ class MethodChannelPortsip extends PortsipPlatform {
     required bool videoCall,
     bool reportToConnectionService = true,
     String? displayName,
+    String? displayNumber,
   }) async {
     final args = {
       'callee': callee,
@@ -224,6 +225,7 @@ class MethodChannelPortsip extends PortsipPlatform {
       'videoCall': videoCall,
       'reportToConnectionService': reportToConnectionService,
       if (displayName != null) 'displayName': displayName,
+      if (displayNumber != null) 'displayNumber': displayNumber,
     };
     _logCall('makeCall', args);
     try {

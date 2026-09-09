@@ -191,13 +191,16 @@ class PortsipConnectionService : ConnectionService() {
          * @param callee The callee's identifier
          * @param hasVideo Whether the call has video
          * @param displayName Name shown in the system call UI (callee if null)
+         * @param displayNumber Number shown in the system call UI and stored in
+         *        the OS call log (callee if null)
          */
         fun reportOutgoingCall(
             context: Context,
             sessionId: Long,
             callee: String,
             hasVideo: Boolean,
-            displayName: String? = null
+            displayName: String? = null,
+            displayNumber: String? = null
         ) {
             if (!isEnabled) {
                 PortsipLogger.d(COMPONENT, "ConnectionService not enabled, skipping outgoing call report")
@@ -246,11 +249,13 @@ class PortsipConnectionService : ConnectionService() {
                     return
                 }
 
-                // Create URI for the callee
-                val uri = Uri.fromParts(PhoneAccount.SCHEME_SIP, callee, null)
+                // The address Telecom shows and writes to the call log, which
+                // may differ from the SIP destination.
+                val shownNumber = displayNumber ?: callee
+                val uri = Uri.fromParts(PhoneAccount.SCHEME_SIP, shownNumber, null)
                 val callExtras = Bundle().apply {
                     putLong(PortsipConstants.BundleExtras.SESSION_ID, sessionId)
-                    putString(PortsipConstants.BundleExtras.CALLEE, callee)
+                    putString(PortsipConstants.BundleExtras.CALLEE, shownNumber)
                     putBoolean(PortsipConstants.BundleExtras.HAS_VIDEO, hasVideo)
                     displayName?.let {
                         putString(PortsipConstants.BundleExtras.DISPLAY_NAME, it)
@@ -264,7 +269,7 @@ class PortsipConnectionService : ConnectionService() {
                 // Request to place the call
                 telecomManager.placeCall(uri, extras)
 
-                PortsipLogger.d(COMPONENT, "Reported outgoing call for session $sessionId to $callee")
+                PortsipLogger.d(COMPONENT, "Reported outgoing call for session $sessionId to $shownNumber")
             } catch (e: SecurityException) {
                 PortsipLogger.e(COMPONENT, "Security exception reporting outgoing call: ${e.message}")
             } catch (e: Exception) {

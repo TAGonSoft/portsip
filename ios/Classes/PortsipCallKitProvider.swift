@@ -357,7 +357,9 @@ class PortsipCallKitProvider: NSObject {
     ///   - hasVideo: Whether the call has video
     ///   - displayName: Name the system call UI shows; must be supplied at
     ///     call time — outgoing calls don't reliably honor later updates.
-    func reportOutgoingCall(sessionId: Int, callee: String, hasVideo: Bool, displayName: String? = nil) {
+    ///   - displayNumber: Number the call UI shows and the OS call history
+    ///     stores. Defaults to callee.
+    func reportOutgoingCall(sessionId: Int, callee: String, hasVideo: Bool, displayName: String? = nil, displayNumber: String? = nil) {
         guard isCallKitEnabled, let provider = provider else {
             return
         }
@@ -368,7 +370,9 @@ class PortsipCallKitProvider: NSObject {
             sessionLock.sync { pendingDisplayNames[sessionId] = displayName }
         }
 
-        let handle = CXHandle(type: .phoneNumber, value: callee)
+        // CXHandle is what the OS formats and stores in Recents, so it takes
+        // the display number rather than the SIP destination.
+        let handle = CXHandle(type: .phoneNumber, value: displayNumber ?? callee)
         let startCallAction = CXStartCallAction(call: uuid, handle: handle)
         startCallAction.isVideo = hasVideo
 

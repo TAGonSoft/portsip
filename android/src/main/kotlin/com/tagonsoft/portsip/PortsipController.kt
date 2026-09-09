@@ -418,6 +418,9 @@ class PortsipController private constructor() : OnPortSIPEvent {
         val reportToConnectionService =
             (arguments["reportToConnectionService"] as? Boolean) ?: true
         val displayName = arguments["displayName"] as? String
+        // The number the system call UI shows; the SIP destination may be
+        // formatted differently (see makeCall docs).
+        val displayNumber = arguments["displayNumber"] as? String
 
         val sessionId = portSipSdk?.call(callee, sendSdp, videoCall) ?: -1L
 
@@ -428,7 +431,8 @@ class PortsipController private constructor() : OnPortSIPEvent {
                 sessionId,
                 callee,
                 videoCall,
-                displayName
+                displayName,
+                displayNumber
             )
         }
 

@@ -134,6 +134,7 @@ abstract class PortsipPlatform extends PlatformInterface {
     required bool videoCall,
     bool reportToConnectionService = true,
     String? displayName,
+    String? displayNumber,
   }) async {
     throw UnimplementedError('makeCall has not been implemented.');
   }
