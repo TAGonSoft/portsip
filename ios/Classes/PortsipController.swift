@@ -104,6 +104,110 @@ class PortsipController: NSObject {
     /// route (see PortsipCallKitProvider.performBluetoothRevive).
     private var audioRebindPending = false
 
+    /// Guards the two session sets below — touched from method calls (sdkQueue)
+    /// and from SDK delegate callbacks alike.
+    private let stateLock = NSLock()
+
+    /// Sessions dialed with keepSystemCallOnFailure: a SIP failure leaves the
+    /// CallKit call up until endSystemCall.
+    private var keepOnFailureSessions: Set<Int> = []
+
+    /// Sessions whose SIP leg failed while keepOnFailureSessions held the
+    /// CallKit call open — no SDK session exists for these any more.
+    private var heldFailedSessions: Set<Int> = []
+
+    /// Pending outgoing call ids are negative and count down from here so they
+    /// can never collide with SDK session ids.
+    private var nextPendingCallId = -1000
+
+    private func isPendingCallId(_ sessionId: Int) -> Bool { sessionId < 0 }
+
+    /// RTP packet/byte counters per session and direction while
+    /// enableRtpCallback is on (guarded by stateLock).
+    private var rtpCounts: [Int: [Int32: (packets: Int, bytes: Int)]] = [:]
+
+    /// Watchdogs for system calls that have no SIP session behind them: a
+    /// pending outgoing call before its INVITE, and a failed leg kept up for
+    /// an announcement. The app is expected to close both, but a path that
+    /// forgets would leave CallKit holding a call forever — which makes the
+    /// NEXT call CallKit's second call and breaks its hold/swap handling.
+    /// These end the call anyway. Keyed by session (or pending) id.
+    private var sessionlessWatchdogs: [Int: DispatchWorkItem] = [:]
+
+    /// A pending call is dialed within a couple of seconds of being started.
+    private static let pendingCallMaxLifetime: TimeInterval = 15
+
+    /// A failure announcement is voice plus tone, at most ~15 s. Generous, so
+    /// this never truncates one in normal operation.
+    private static let heldFailedMaxLifetime: TimeInterval = 45
+
+    private func armSessionlessWatchdog(_ sessionId: Int, after seconds: TimeInterval) {
+        let work = DispatchWorkItem { [weak self] in
+            self?.fireSessionlessWatchdog(sessionId)
+        }
+        stateLock.lock()
+        sessionlessWatchdogs.removeValue(forKey: sessionId)?.cancel()
+        sessionlessWatchdogs[sessionId] = work
+        stateLock.unlock()
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    /// The call got a session, or was closed the normal way.
+    private func cancelSessionlessWatchdog(_ sessionId: Int) {
+        stateLock.lock()
+        let work = sessionlessWatchdogs.removeValue(forKey: sessionId)
+        stateLock.unlock()
+        work?.cancel()
+    }
+
+    private func fireSessionlessWatchdog(_ sessionId: Int) {
+        stateLock.lock()
+        sessionlessWatchdogs.removeValue(forKey: sessionId)
+        heldFailedSessions.remove(sessionId)
+        keepOnFailureSessions.remove(sessionId)
+        stateLock.unlock()
+        guard PortsipCallKitProvider.shared.getUUID(for: sessionId) != nil else { return }
+        PortsipLogger.w("Controller", "system call \(sessionId) outlived its SIP session — ending it")
+        endSessionlessCall(sessionId)
+    }
+
+    /// Ends a system call that has no SIP session. Never touches the SDK
+    /// session — there isn't one.
+    ///
+    /// [stopAudioIfLast] must be false when the caller already holds sdkQueue
+    /// (a sync from inside it deadlocks) and when a new call is about to take
+    /// the engine over anyway; CallKit's own deactivation stops it in both cases.
+    private func endSessionlessCall(_ sessionId: Int, stopAudioIfLast: Bool = true) {
+        // A caller still waiting on this pending call's activation must not
+        // be left hanging.
+        firePendingActivation(sessionId, activated: false)
+        if stopAudioIfLast, PortsipCallKitProvider.shared.sessionCount <= 1 {
+            sdkQueue.sync {
+                portSIPSDK.stopAudio(AVAudioSession.sharedInstance())
+                audioRebindPending = false
+            }
+        }
+        PortsipCallKitProvider.shared.reportCallEnded(sessionId: sessionId, reason: .failed)
+    }
+
+    /// Ends every system call left without a SIP session, except [except].
+    /// Run at the start of a call: neither state can legitimately outlive the
+    /// call it belonged to, and one that does becomes a ghost second call.
+    private func reapSessionlessCalls(except: Int? = nil) {
+        stateLock.lock()
+        var stale = heldFailedSessions.union(sessionlessWatchdogs.keys)
+        if let except = except { stale.remove(except) }
+        heldFailedSessions.subtract(stale)
+        for sessionId in stale {
+            sessionlessWatchdogs.removeValue(forKey: sessionId)?.cancel()
+        }
+        stateLock.unlock()
+        for sessionId in stale where PortsipCallKitProvider.shared.getUUID(for: sessionId) != nil {
+            PortsipLogger.w("Controller", "reaping stale system call \(sessionId) before a new call")
+            endSessionlessCall(sessionId, stopAudioIfLast: false)
+        }
+    }
+
     /// Private initializer to enforce singleton pattern.
     /// Sets up lifecycle observers for background handling.
     private override init() {
@@ -450,6 +554,76 @@ class PortsipController: NSObject {
         }
     }
 
+    /// Sets the instance ID published as the `+sip.instance` Contact parameter
+    /// (RFC 5626). Must be stable for the lifetime of the install and unique
+    /// per device; the SDK generates one itself if this is never called.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - instanceId: The instance ID, as a URN
+    /// - Returns: 0 on success, error code otherwise
+    func setInstanceId(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            guard let instanceId = arguments["instanceId"] as? String,
+                  !instanceId.isEmpty else {
+                return -1
+            }
+            return Int(portSIPSDK.setInstanceId(instanceId))
+        }
+    }
+
+    /// Removes the account loaded by setUser, freeing the core's single
+    /// account slot so a different account can be loaded without a full
+    /// unInitialize. The SDK reports nothing, so this always returns 0.
+    /// - Returns: 0
+    func removeUser() -> Int {
+        return sdkQueue.sync {
+            portSIPSDK.removeUser()
+            return 0
+        }
+    }
+
+    /// Sets the SIP keep-alive interval, which holds the signaling NAT
+    /// binding open between registrations.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - keepAliveTime: Interval in seconds; 0 disables it
+    /// - Returns: 0 on success, error code otherwise
+    func setKeepAliveTime(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let keepAliveTime = arguments["keepAliveTime"] as? Int ?? 0
+            return Int(portSIPSDK.setKeepAliveTime(Int32(keepAliveTime)))
+        }
+    }
+
+    /// Sends RTP keep-alive packets on established calls, holding the media
+    /// NAT binding open while a leg is silent.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - state: Whether to send keep-alive packets
+    ///   - keepAlivePayloadType: Payload type of the packet, usually 126
+    ///   - deltaTransmitTimeMS: Send interval, 15000-300000
+    /// - Returns: 0 on success, error code otherwise
+    func setRtpKeepAlive(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let state = arguments["state"] as? Bool ?? false
+            let payloadType = arguments["keepAlivePayloadType"] as? Int ?? 126
+            let deltaMs = arguments["deltaTransmitTimeMS"] as? Int ?? 15000
+            return Int(portSIPSDK.setRtpKeepAlive(
+                state,
+                keepAlivePayloadType: Int32(payloadType),
+                deltaTransmitTimeMS: Int32(deltaMs)
+            ))
+        }
+    }
+
+    /// Sets how reliable provisional responses (PRACK, RFC 3262) are used.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - mode: 0 never, 1 supported-essential, 2 supported, 3 required
+    /// - Returns: 0 on success, error code otherwise
+    func setReliableProvisional(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let mode = arguments["mode"] as? Int ?? 0
+            return Int(portSIPSDK.setReliableProvisional(Int32(mode)))
+        }
+    }
+
     /// Configures audio codecs for the SIP session.
     /// - Parameter arguments: Dictionary containing:
     ///   - audioCodecs: Array of audio codec values to enable
@@ -463,6 +637,50 @@ class PortsipController: NSObject {
                 }
             }
             return 0
+        }
+    }
+
+    /// Sets the SDP fmtp parameter line for an audio codec.
+    /// The string reaches the SDK verbatim and shows up in the offer/answer as
+    /// `a=fmtp:<pt> <parameter>`, so it must use that codec's own parameters
+    /// (RFC 7587 for OPUS, RFC 4867 for AMR).
+    /// - Parameter arguments: Dictionary containing:
+    ///   - codec: Audio codec value the parameter applies to
+    ///   - parameter: The fmtp value
+    /// - Returns: 0 on success, error code otherwise
+    func setAudioCodecParameter(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            guard let codecValue = arguments["codec"] as? Int,
+                  let parameter = arguments["parameter"] as? String else {
+                return -1
+            }
+            return Int(portSIPSDK.setAudioCodecParameter(
+                AUDIOCODEC_TYPE(rawValue: Int32(codecValue)),
+                parameter: parameter
+            ))
+        }
+    }
+
+    /// Sets the encoder target bit rate for an audio codec.
+    /// Local encoder only — nothing about it is signalled to the far end.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - sessionId: The live call to apply it to. There is no "all calls"
+    ///     value here — the SDK rejects -1 with -60024 (ECoreCallIdNotFound).
+    ///   - codec: Audio codec value the bit rate applies to
+    ///   - bitrateKbps: Target bit rate in kbit/s
+    /// - Returns: 0 on success, error code otherwise
+    func setAudioBitrate(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            guard let sessionId = arguments["sessionId"] as? Int,
+                  let codecValue = arguments["codec"] as? Int,
+                  let bitrateKbps = arguments["bitrateKbps"] as? Int else {
+                return -1
+            }
+            return Int(portSIPSDK.setAudioBitrate(
+                sessionId,
+                codecType: AUDIOCODEC_TYPE(rawValue: Int32(codecValue)),
+                bitrateKbps: Int32(bitrateKbps)
+            ))
         }
     }
 
@@ -549,11 +767,42 @@ class PortsipController: NSObject {
             // a single system call (one CallKit call).
             let reportToConnectionService = arguments["reportToConnectionService"] as? Bool ?? true
             let displayName = arguments["displayName"] as? String
+            let pendingCallId = arguments["pendingCallId"] as? Int
+            let keepSystemCallOnFailure = arguments["keepSystemCallOnFailure"] as? Bool ?? false
+
+            // A leftover system call from a previous call would make this one
+            // CallKit's second call — clear it before dialing.
+            reapSessionlessCalls(except: pendingCallId)
 
             let sessionId = portSIPSDK.call(callee, sendSdp: sendSdp, videoCall: videoCall)
 
             // Only prepare audio and report to CallKit if call succeeded
             if sessionId > 0 {
+                if keepSystemCallOnFailure {
+                    stateLock.lock()
+                    keepOnFailureSessions.insert(Int(sessionId))
+                    stateLock.unlock()
+                }
+                if let pendingCallId = pendingCallId,
+                   PortsipCallKitProvider.shared.isCallKitEnabled {
+                    // The CallKit call already exists and its audio session
+                    // was configured at its CXStartCallAction and activated
+                    // in didActivate — just point it at the real session.
+                    Self.ensureCallSessionConfiguration()
+                    // Bound or gone, it is no longer a session-less call.
+                    cancelSessionlessWatchdog(pendingCallId)
+                    if !PortsipCallKitProvider.shared.rebindSession(from: pendingCallId, to: Int(sessionId)) {
+                        // Ended from the system UI before the INVITE went
+                        // out — don't leave a session nobody is watching.
+                        PortsipLogger.w("Controller", "pending call \(pendingCallId) gone before INVITE — dropping session \(sessionId)")
+                        _ = portSIPSDK.hangUp(sessionId)
+                        stateLock.lock()
+                        keepOnFailureSessions.remove(Int(sessionId))
+                        stateLock.unlock()
+                        return -1
+                    }
+                    return Int(sessionId)
+                }
                 if PortsipCallKitProvider.shared.isCallKitEnabled {
                     // SDK CallKit contract: configure the session at call
                     // start; the engine starts only in didActivate. Starting it
@@ -572,9 +821,164 @@ class PortsipController: NSObject {
                         displayName: displayName
                     )
                 }
+            } else if let pendingCallId = pendingCallId {
+                // The INVITE never left; take the pending call down with it.
+                cancelSessionlessWatchdog(pendingCallId)
+                endSessionlessCall(pendingCallId, stopAudioIfLast: false)
             }
 
             return Int(sessionId)
+        }
+    }
+
+    /// Starts a CallKit call for the callee without sending the INVITE. The
+    /// call is keyed by a negative pending id until makeCall(pendingCallId:)
+    /// rebinds it to the SIP session. Returns 0 when CallKit is unavailable.
+    ///
+    /// Completes only once CallKit has activated the audio session and the
+    /// SDK audio engine is running (see activateAudioSession) — the whole
+    /// point of the pending call is to play a file on the call route, and a
+    /// file started before that plays into a stopped engine. A 3 s timeout
+    /// completes anyway (logged) so the app can never hang on it.
+    func beginOutgoingCall(arguments: [String: Any], completion: @escaping (Int) -> Void) {
+        let callee = arguments["callee"] as? String ?? ""
+        let displayName = arguments["displayName"] as? String
+        guard PortsipCallKitProvider.shared.isCallKitEnabled, !callee.isEmpty else {
+            completion(0)
+            return
+        }
+        reapSessionlessCalls()
+        stateLock.lock()
+        let pendingCallId = nextPendingCallId
+        nextPendingCallId -= 1
+        stateLock.unlock()
+        armSessionlessWatchdog(pendingCallId, after: Self.pendingCallMaxLifetime)
+        let started = Date()
+        armPendingActivation(pendingCallId) { activated in
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            if activated {
+                PortsipLogger.d("Controller", "pending call \(pendingCallId): audio session active after \(ms) ms")
+            } else {
+                PortsipLogger.w("Controller", "pending call \(pendingCallId): audio session NOT activated after \(ms) ms — local audio will be silent")
+            }
+            completion(pendingCallId)
+        }
+        PortsipCallKitProvider.shared.reportOutgoingCall(
+            sessionId: pendingCallId,
+            callee: callee,
+            hasVideo: false,
+            displayName: displayName
+        )
+    }
+
+    /// The pending call waiting for CallKit's audio activation, if any.
+    private var pendingActivation: (id: Int, fire: (Bool) -> Void)?
+
+    private func armPendingActivation(_ pendingCallId: Int, _ completion: @escaping (Bool) -> Void) {
+        // A waiter already in the slot must be completed, not dropped: its
+        // Dart future would otherwise never resolve.
+        firePendingActivation(nil, activated: false)
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.firePendingActivation(pendingCallId, activated: false)
+        }
+        stateLock.lock()
+        pendingActivation = (pendingCallId, { activated in
+            timeout.cancel()
+            DispatchQueue.main.async { completion(activated) }
+        })
+        stateLock.unlock()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: timeout)
+    }
+
+    /// Completes the pending call's activation wait, once. Called from
+    /// activateAudioSession (success), the end-call path (CallKit refused or
+    /// the user ended it first) and the timeout.
+    private func firePendingActivation(_ pendingCallId: Int?, activated: Bool) {
+        stateLock.lock()
+        guard let pending = pendingActivation,
+              pendingCallId == nil || pending.id == pendingCallId else {
+            stateLock.unlock()
+            return
+        }
+        pendingActivation = nil
+        stateLock.unlock()
+        pending.fire(activated)
+    }
+
+    /// Ends a pending call that was never dialed. Routed through CallKit like
+    /// a normal hang-up; the result arrives as onCallKitEndCall.
+    func cancelOutgoingCall(arguments: [String: Any]) -> Int {
+        let pendingCallId = arguments["pendingCallId"] as? Int ?? 0
+        guard isPendingCallId(pendingCallId),
+              PortsipCallKitProvider.shared.getUUID(for: pendingCallId) != nil else { return 0 }
+        PortsipCallKitProvider.shared.requestEndCall(sessionId: pendingCallId)
+        return 0
+    }
+
+    /// Ends the CallKit call held open after its SIP leg failed (see
+    /// keepSystemCallOnFailure). No-op for anything else.
+    func endSystemCall(arguments: [String: Any]) -> Int {
+        let sessionId = arguments["sessionId"] as? Int ?? -1
+        stateLock.lock()
+        let held = heldFailedSessions.remove(sessionId) != nil
+        stateLock.unlock()
+        guard held else { return 0 }
+        cancelSessionlessWatchdog(sessionId)
+        endSessionlessCall(sessionId)
+        return 0
+    }
+
+    /// Plays a file to the local user through the SDK audio engine.
+    /// - Parameter arguments: Dictionary containing fileUrl and loop.
+    /// - Returns: 0 on success, error code otherwise.
+    /// Completes off the calling thread: opening a file goes through the SDK's
+    /// decoder and has been measured at several hundred milliseconds. The
+    /// method-channel handler runs on the main thread, so a blocking hop onto
+    /// sdkQueue freezes the UI — and an announcement starts exactly while the
+    /// calling page is animating in.
+    func startPlayingFileLocally(arguments: [String: Any], completion: @escaping (Int) -> Void) {
+        sdkQueue.async { [weak self] in
+            guard let self = self, let fileUrl = arguments["fileUrl"] as? String else {
+                DispatchQueue.main.async { completion(-1) }
+                return
+            }
+            let loop = arguments["loop"] as? Bool ?? false
+            let code = Int(self.portSIPSDK.startPlayingFileLocally(fileUrl, loop: loop, playVideoWindow: nil))
+            DispatchQueue.main.async { completion(code) }
+        }
+    }
+
+    /// Stops the local file playback. Off the calling thread for the same
+    /// reason as the start; sdkQueue is serial, so a stop still lands before
+    /// the start that follows it.
+    func stopPlayingFileLocally(completion: @escaping (Int) -> Void) {
+        sdkQueue.async { [weak self] in
+            guard let self = self else {
+                DispatchQueue.main.async { completion(-1) }
+                return
+            }
+            let code = Int(self.portSIPSDK.stopPlayingFileLocally())
+            DispatchQueue.main.async { completion(code) }
+        }
+    }
+
+    /// Counts RTP packets on a session; see onRTPPacketCallback.
+    func enableRtpCallback(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let sessionId = arguments["sessionId"] as? Int ?? -1
+            let direction = DIRECTION_MODE(UInt32(arguments["direction"] as? Int ?? 0))
+            stateLock.lock()
+            rtpCounts.removeValue(forKey: sessionId)
+            stateLock.unlock()
+            return Int(portSIPSDK.enableRtpCallback(sessionId, mediaType: 0, mode: direction))
+        }
+    }
+
+    /// Enables/disables early media .
+    func enableEarlyMedia(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            let enable = arguments["enable"] as? Bool ?? false
+            return Int(portSIPSDK.enableEarlyMedia(enable))
         }
     }
 
@@ -1009,7 +1413,16 @@ class PortsipController: NSObject {
     /// - Returns: 0 on success, error code otherwise
     @discardableResult
     func performEndCallAction(sessionId: Int) -> Int {
-        let result = sdkQueue.sync {
+        // A pending call (no INVITE yet) or a leg that already failed has no
+        // SDK session to hang up — only the CallKit side needs ending.
+        stateLock.lock()
+        let noSdkSession = isPendingCallId(sessionId) || heldFailedSessions.remove(sessionId) != nil
+        keepOnFailureSessions.remove(sessionId)
+        stateLock.unlock()
+        cancelSessionlessWatchdog(sessionId)
+        // A pending call ended before its audio session came up.
+        if isPendingCallId(sessionId) { firePendingActivation(sessionId, activated: false) }
+        let result: Int32 = noSdkSession ? 0 : sdkQueue.sync {
             return portSIPSDK.hangUp(sessionId)
         }
 
@@ -1092,6 +1505,8 @@ class PortsipController: NSObject {
     /// the SIP media is fine. Idempotent: starting already-running audio is a
     /// no-op.
     func activateAudioSession() {
+        // The engine is up: release a pending call waiting to play its file.
+        defer { firePendingActivation(nil, activated: true) }
         sdkQueue.sync {
             portSIPSDK.startAudio(AVAudioSession.sharedInstance())
             Self.ensureCallSessionConfiguration()
@@ -1221,6 +1636,9 @@ class PortsipController: NSObject {
         sdkQueue.sync {
             conferenceJoinedSessions.removeAll()
             if let sdk = _portSIPSDK {
+                // A local file still playing into a torn-down engine crashes
+                // inside WebRTC.
+                _ = sdk.stopPlayingFileLocally()
                 sdk.stopKeepAwake()
                 sdk.unRegisterServer(0)
                 sdk.unInitialize()
@@ -1247,6 +1665,7 @@ class PortsipController: NSObject {
 
             // Unregister and uninitialize SDK
             if let sdk = _portSIPSDK {
+                _ = sdk.stopPlayingFileLocally()
                 sdk.stopKeepAwake()
                 sdk.unRegisterServer(0)
                 sdk.unInitialize()
@@ -1302,10 +1721,14 @@ extension PortsipController: PortSIPEventDelegate {
     }
 
     func onInviteRinging(_ sessionId: Int, statusText: String!, statusCode: Int32, sipMessage: String!) {
+        // A provisional response with SDP carries early media (the network's
+        // own ringback / announcement), so the app must not add a local tone.
+        let hasSdp = (sipMessage ?? "").range(of: "application/sdp", options: .caseInsensitive) != nil
         let eventData: [String: Any] = [
             PortsipConstants.EventKeys.sessionId: sessionId,
             PortsipConstants.EventKeys.statusText: statusText ?? "",
             PortsipConstants.EventKeys.statusCode: Int(statusCode),
+            PortsipConstants.EventKeys.hasSdp: hasSdp,
             PortsipConstants.EventKeys.sipMessage: sipMessage ?? ""
         ]
         PortsipEventBridge.shared.sendEvent(name: "onInviteRinging", data: eventData)
@@ -1332,10 +1755,23 @@ extension PortsipController: PortSIPEventDelegate {
     }
 
     func onInviteFailure(_ sessionId: Int, callerDisplayName: String!, caller: String!, calleeDisplayName: String!, callee: String!, reason: String!, code: Int32, sipMessage: String!) {
+        stateLock.lock()
+        let keepSystemCall = keepOnFailureSessions.remove(sessionId) != nil
+        rtpCounts.removeValue(forKey: sessionId)
+        stateLock.unlock()
         // A merged-conference primary's CXCall is transferred to a surviving
         // leg instead of ended (see transferSystemCallIfNeeded).
         if PortsipCallKitProvider.shared.transferSystemCallIfNeeded(endingSessionId: sessionId) == nil {
-            PortsipCallKitProvider.shared.reportCallEnded(sessionId: sessionId, reason: .failed)
+            if keepSystemCall, PortsipCallKitProvider.shared.getUUID(for: sessionId) != nil {
+                // Keep the CallKit call (and the audio session) up so the app
+                // can play a failure announcement; ended by endSystemCall.
+                stateLock.lock()
+                heldFailedSessions.insert(sessionId)
+                stateLock.unlock()
+                armSessionlessWatchdog(sessionId, after: Self.heldFailedMaxLifetime)
+            } else {
+                PortsipCallKitProvider.shared.reportCallEnded(sessionId: sessionId, reason: .failed)
+            }
         }
 
         let eventData: [String: Any] = [
@@ -1378,6 +1814,10 @@ extension PortsipController: PortSIPEventDelegate {
     }
 
     func onInviteClosed(_ sessionId: Int, sipMessage: String!) {
+        stateLock.lock()
+        keepOnFailureSessions.remove(sessionId)
+        rtpCounts.removeValue(forKey: sessionId)
+        stateLock.unlock()
         // A merged-conference primary's CXCall is transferred to a surviving
         // leg instead of ended (see transferSystemCallIfNeeded).
         if PortsipCallKitProvider.shared.transferSystemCallIfNeeded(endingSessionId: sessionId) == nil {
@@ -1438,7 +1878,17 @@ extension PortsipController: PortSIPEventDelegate {
 
     // MARK: - Unused Delegate Methods (Required by Protocol - Empty Implementations)
 
-    func onInviteSessionProgress(_ sessionId: Int, audioCodecs: String!, videoCodecs: String!, existsEarlyMedia: Bool, existsAudio: Bool, existsVideo: Bool, sipMessage: String!) {}
+    func onInviteSessionProgress(_ sessionId: Int, audioCodecs: String!, videoCodecs: String!, existsEarlyMedia: Bool, existsAudio: Bool, existsVideo: Bool, sipMessage: String!) {
+        let eventData: [String: Any] = [
+            PortsipConstants.EventKeys.sessionId: sessionId,
+            PortsipConstants.EventKeys.audioCodecs: audioCodecs ?? "",
+            PortsipConstants.EventKeys.videoCodecs: videoCodecs ?? "",
+            PortsipConstants.EventKeys.existsEarlyMedia: existsEarlyMedia,
+            PortsipConstants.EventKeys.existsAudio: existsAudio,
+            PortsipConstants.EventKeys.existsVideo: existsVideo
+        ]
+        PortsipEventBridge.shared.sendEvent(name: "onInviteSessionProgress", data: eventData)
+    }
 
     func onInviteUpdated(_ sessionId: Int, audioCodecs: String!, videoCodecs: String!, screenCodecs: String!, existsAudio: Bool, existsVideo: Bool, existsScreen: Bool, sipMessage: String!) {}
     func onInviteBeginingForward(_ forwardTo: String!) {}
@@ -1467,7 +1917,13 @@ extension PortsipController: PortSIPEventDelegate {
     func onSendOutOfDialogMessageFailure(_ messageId: Int, fromDisplayName: String!, from: String!, toDisplayName: String!, to: String!, reason: String!, code: Int32, sipMessage: String!) {}
     func onSubscriptionFailure(_ subscribeId: Int, statusCode: Int32) {}
     func onSubscriptionTerminated(_ subscribeId: Int) {}
-    func onPlayFileFinished(_ sessionId: Int, fileName: String!) {}
+    func onPlayFileFinished(_ sessionId: Int, fileName: String!) {
+        let eventData: [String: Any] = [
+            PortsipConstants.EventKeys.sessionId: sessionId,
+            PortsipConstants.EventKeys.fileName: fileName ?? ""
+        ]
+        PortsipEventBridge.shared.sendEvent(name: "onPlayFileFinished", data: eventData)
+    }
     func onStatistics(_ sessionId: Int, stat: String!) {
         let eventData: [String: Any] = [
             PortsipConstants.EventKeys.sessionId: sessionId,
@@ -1476,7 +1932,28 @@ extension PortsipController: PortSIPEventDelegate {
         PortsipEventBridge.shared.sendEvent(name: "onStatistics", data: eventData)
     }
     // SDK 19.6.2: returns the new size when the packet is modified, 0 when untouched.
-    func onRTPPacketCallback(_ sessionId: Int, mediaType: Int32, direction: DIRECTION_MODE, rtpPacket: UnsafeMutablePointer<UInt8>!, packetSize: Int32) -> Int32 { 0 }
+    // Per-packet SDK callback: count only — nothing may block here. The
+    // aggregated count goes to Flutter on the first packet and every 50th.
+    func onRTPPacketCallback(_ sessionId: Int, mediaType: Int32, direction: DIRECTION_MODE, rtpPacket: UnsafeMutablePointer<UInt8>!, packetSize: Int32) -> Int32 {
+        let dir = Int32(direction.rawValue)
+        stateLock.lock()
+        var perDirection = rtpCounts[sessionId] ?? [:]
+        let current = perDirection[dir] ?? (packets: 0, bytes: 0)
+        let updated = (packets: current.packets + 1, bytes: current.bytes + Int(packetSize))
+        perDirection[dir] = updated
+        rtpCounts[sessionId] = perDirection
+        stateLock.unlock()
+        if updated.packets == 1 || updated.packets % 50 == 0 {
+            let eventData: [String: Any] = [
+                PortsipConstants.EventKeys.sessionId: sessionId,
+                "direction": Int(dir),
+                "packets": updated.packets,
+                "bytes": updated.bytes
+            ]
+            PortsipEventBridge.shared.sendEvent(name: "onRtpPacket", data: eventData)
+        }
+        return 0
+    }
     func onAudioRawCallback(_ sessionId: Int, audioCallbackMode: Int32, data: UnsafeMutablePointer<UInt8>!, dataLength: Int32, samplingFreqHz: Int32) {}
     func onVideoRawCallback(_ sessionId: Int, videoCallbackMode: Int32, width: Int32, height: Int32, data: UnsafeMutablePointer<UInt8>!, dataLength: Int32) -> Int32 { return 0 }
 }

@@ -348,6 +348,58 @@ class PortsipConnectionService : ConnectionService() {
          * caller must then NOT destroy the Connection. Returns null when no
          * transfer applies, after pruning [endingSessionId] from the tracking.
          */
+        /**
+         * Pending outgoing calls (see PortsipController.beginOutgoingCall) are
+         * placed with a negative id before any SIP session exists. Because
+         * placeCall → onCreateOutgoingConnection is asynchronous, a bind or a
+         * cancel can arrive before the Connection does — both are parked here
+         * and applied at creation.
+         */
+        private val pendingRebinds = mutableMapOf<Long, Long>()
+        private val cancelledPendingCalls = mutableSetOf<Long>()
+
+        fun isPendingCallId(sessionId: Long): Boolean = sessionId < 0L
+
+        /** True while a live (not disconnected) Connection exists for the session. */
+        fun hasConnection(sessionId: Long): Boolean = synchronized(connectionLock) {
+            sessionToConnection[sessionId]?.let { it.state != Connection.STATE_DISCONNECTED } ?: false
+        }
+
+        /**
+         * Re-keys a pending call's Connection to the SIP session dialed for
+         * it. Returns false when the pending call is already gone (ended from
+         * the system UI before the INVITE).
+         */
+        fun bindPendingSession(pendingCallId: Long, sessionId: Long): Boolean {
+            synchronized(connectionLock) {
+                if (cancelledPendingCalls.remove(pendingCallId)) return false
+                val connection = sessionToConnection.remove(pendingCallId)
+                if (connection == null) {
+                    // Connection not created yet — bind when it is.
+                    pendingRebinds[pendingCallId] = sessionId
+                    return true
+                }
+                if (connection.state == Connection.STATE_DISCONNECTED) return false
+                connection.adoptSession(sessionId)
+                sessionToConnection[sessionId] = connection
+                PortsipLogger.d(COMPONENT, "Pending call $pendingCallId bound to session $sessionId")
+                return true
+            }
+        }
+
+        /** Ends a pending call that was never dialed. */
+        fun cancelPendingCall(pendingCallId: Long) {
+            synchronized(connectionLock) {
+                pendingRebinds.remove(pendingCallId)
+                if (!sessionToConnection.containsKey(pendingCallId)) {
+                    // Connection not created yet — end it on arrival.
+                    cancelledPendingCalls.add(pendingCallId)
+                    return
+                }
+            }
+            reportCallEnded(pendingCallId, DisconnectCause.CANCELED)
+        }
+
         fun transferSystemCallIfNeeded(endingSessionId: Long): Long? {
             synchronized(connectionLock) {
                 if (conferencePrimarySession != endingSessionId) {
@@ -709,7 +761,14 @@ class PortsipConnectionService : ConnectionService() {
         val displayName =
             request?.extras?.getString(PortsipConstants.BundleExtras.DISPLAY_NAME)
 
-        val connection = PortsipConnection(applicationContext, sessionId).apply {
+        // A pending call may already have been bound to its SIP session, or
+        // cancelled, while Telecom was creating this Connection.
+        val (boundSessionId, cancelled) = synchronized(connectionLock) {
+            val bound = pendingRebinds.remove(sessionId) ?: sessionId
+            Pair(bound, cancelledPendingCalls.remove(sessionId))
+        }
+
+        val connection = PortsipConnection(applicationContext, boundSessionId).apply {
             setAddress(request?.address, TelecomManager.PRESENTATION_ALLOWED)
             setCallerDisplayName(displayName ?: callee, TelecomManager.PRESENTATION_ALLOWED)
             connectionCapabilities = Connection.CAPABILITY_MUTE or
@@ -724,9 +783,15 @@ class PortsipConnectionService : ConnectionService() {
             setDialing()
         }
 
-        // Register the connection
-        if (sessionId > 0) {
-            registerConnection(sessionId, connection)
+        if (cancelled) {
+            connection.setDisconnected(DisconnectCause(DisconnectCause.CANCELED))
+            connection.destroy()
+            return connection
+        }
+
+        // Register the connection (pending calls carry a negative id)
+        if (boundSessionId > 0 || isPendingCallId(boundSessionId)) {
+            registerConnection(boundSessionId, connection)
         }
 
         return connection

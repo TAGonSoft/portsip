@@ -2,10 +2,14 @@ package com.tagonsoft.portsip
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.portsip.OnPortSIPEvent
 import com.portsip.PortSipEnumDefine
 import com.portsip.PortSipSdk
 import java.lang.ref.WeakReference
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * Controller class that manages the PortSIP SDK integration for the Flutter plugin.
@@ -34,6 +38,92 @@ class PortsipController private constructor() : OnPortSIPEvent {
 
     /// Lock object for synchronizing SDK operations
     private val sdkLock = Any()
+
+    /** Sessions dialed with keepSystemCallOnFailure: a SIP failure leaves the Telecom call up until endSystemCall. */
+    private val keepOnFailureSessions = mutableSetOf<Long>()
+
+    /** Sessions whose SIP leg failed while the Telecom call was held open — no SDK session exists any more. */
+    private val heldFailedSessions = mutableSetOf<Long>()
+
+    /** Pending outgoing call ids are negative and count down so they never collide with SDK session ids. */
+    private var nextPendingCallId = -1000L
+
+    /** RTP packet/byte counters per session and direction while enableRtpCallback is on. */
+    private val rtpCounts = mutableMapOf<Long, MutableMap<Int, LongArray>>()
+
+    /**
+     * Watchdogs for system calls with no SIP session behind them: a pending
+     * outgoing call before its INVITE, and a failed leg kept up for an
+     * announcement. The app is expected to close both, but a path that forgets
+     * would leave Telecom holding a call forever — which makes the NEXT call a
+     * second call and breaks its hold/swap handling. These end it anyway.
+     */
+    private val sessionlessWatchdogs = mutableMapOf<Long, Runnable>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Serial, so a stop still lands before the start that follows it. */
+    private val playbackExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    /** A pending call is dialed within a couple of seconds of being started. */
+    private val pendingCallMaxLifetimeMs = 15_000L
+
+    /** A failure announcement is voice plus tone, at most ~15 s. */
+    private val heldFailedMaxLifetimeMs = 45_000L
+
+    private fun armSessionlessWatchdog(sessionId: Long, afterMs: Long) {
+        val work = Runnable { fireSessionlessWatchdog(sessionId) }
+        synchronized(sessionlessWatchdogs) {
+            sessionlessWatchdogs.remove(sessionId)?.let { mainHandler.removeCallbacks(it) }
+            sessionlessWatchdogs[sessionId] = work
+        }
+        mainHandler.postDelayed(work, afterMs)
+    }
+
+    /** The call got a session, or was closed the normal way. */
+    private fun cancelSessionlessWatchdog(sessionId: Long) {
+        val work = synchronized(sessionlessWatchdogs) { sessionlessWatchdogs.remove(sessionId) }
+        work?.let { mainHandler.removeCallbacks(it) }
+    }
+
+    private fun fireSessionlessWatchdog(sessionId: Long) {
+        synchronized(sessionlessWatchdogs) { sessionlessWatchdogs.remove(sessionId) }
+        synchronized(heldFailedSessions) {
+            heldFailedSessions.remove(sessionId)
+            keepOnFailureSessions.remove(sessionId)
+        }
+        PortsipLogger.w(COMPONENT, "system call $sessionId outlived its SIP session — ending it")
+        endSessionlessCall(sessionId)
+    }
+
+    /** Ends a system call that has no SIP session. Never touches the SDK. */
+    private fun endSessionlessCall(sessionId: Long) {
+        if (PortsipConnectionService.isPendingCallId(sessionId)) {
+            PortsipConnectionService.cancelPendingCall(sessionId)
+        } else {
+            PortsipConnectionService.reportCallEnded(sessionId, android.telecom.DisconnectCause.ERROR)
+        }
+    }
+
+    /**
+     * Ends every system call left without a SIP session, except [except]. Run
+     * at the start of a call: neither state can legitimately outlive the call
+     * it belonged to, and one that does becomes a ghost second call.
+     */
+    private fun reapSessionlessCalls(except: Long? = null) {
+        val stale = mutableSetOf<Long>()
+        synchronized(sessionlessWatchdogs) {
+            stale.addAll(sessionlessWatchdogs.keys)
+        }
+        synchronized(heldFailedSessions) { stale.addAll(heldFailedSessions) }
+        if (except != null) stale.remove(except)
+        if (stale.isEmpty()) return
+        synchronized(heldFailedSessions) { heldFailedSessions.removeAll(stale) }
+        stale.forEach { cancelSessionlessWatchdog(it) }
+        stale.forEach {
+            PortsipLogger.w(COMPONENT, "reaping stale system call $it before a new call")
+            endSessionlessCall(it)
+        }
+    }
 
     companion object {
         private const val COMPONENT = "Controller"
@@ -280,6 +370,67 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     /**
+     * Sets the instance ID published as the `+sip.instance` Contact parameter
+     * (RFC 5626). Must be stable for the lifetime of the install and unique per
+     * device; the SDK generates one itself if this is never called.
+     * @param arguments Map containing instanceId
+     * @return 0 on success, error code otherwise
+     */
+    fun setInstanceId(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val instanceId = (arguments["instanceId"] as? String)?.takeIf { it.isNotEmpty() }
+            ?: return -1
+        return portSipSdk?.setInstanceId(instanceId) ?: -1
+    }
+
+    /**
+     * Removes the account loaded by setUser, freeing the core's single account
+     * slot so a different account can be loaded without a full unInitialize.
+     * The SDK reports nothing, so this always returns 0.
+     * @return 0
+     */
+    fun removeUser(): Int = synchronized(sdkLock) {
+        portSipSdk?.removeUser()
+        PortsipLogger.d(COMPONENT, "User removed")
+        return 0
+    }
+
+    /**
+     * Sets the SIP keep-alive interval, which holds the signaling NAT binding
+     * open between registrations.
+     * @param arguments Map containing keepAliveTime in seconds; 0 disables it
+     * @return 0 on success, error code otherwise
+     */
+    fun setKeepAliveTime(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val keepAliveTime = (arguments["keepAliveTime"] as? Int) ?: 0
+        return portSipSdk?.setKeepAliveTime(keepAliveTime) ?: -1
+    }
+
+    /**
+     * Sends RTP keep-alive packets on established calls, holding the media NAT
+     * binding open while a leg is silent.
+     * @param arguments Map containing state, keepAlivePayloadType and
+     * deltaTransmitTimeMS
+     * @return 0 on success, error code otherwise
+     */
+    fun setRtpKeepAlive(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val state = (arguments["state"] as? Boolean) ?: false
+        val payloadType = (arguments["keepAlivePayloadType"] as? Int) ?: 126
+        val deltaMs = (arguments["deltaTransmitTimeMS"] as? Int) ?: 15000
+        return portSipSdk?.setRtpKeepAlive(state, payloadType, deltaMs) ?: -1
+    }
+
+    /**
+     * Sets how reliable provisional responses (PRACK, RFC 3262) are used.
+     * @param arguments Map containing mode: 0 never, 1 supported-essential,
+     * 2 supported, 3 required
+     * @return 0 on success, error code otherwise
+     */
+    fun setReliableProvisional(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val mode = (arguments["mode"] as? Int) ?: 0
+        return portSipSdk?.setReliableProvisional(mode) ?: -1
+    }
+
+    /**
      * Configures audio codecs for the SIP session.
      * @param arguments Map containing audioCodecs array
      * @return 0 on success, error code otherwise
@@ -295,6 +446,40 @@ class PortsipController private constructor() : OnPortSIPEvent {
             }
         }
         return 0
+    }
+
+    /**
+     * Sets the SDP fmtp parameter line for an audio codec.
+     * The string reaches the SDK verbatim and shows up in the offer/answer as
+     * `a=fmtp:<pt> <parameter>`, so it must use that codec's own parameters
+     * (RFC 7587 for OPUS, RFC 4867 for AMR).
+     * @param arguments Map containing codec and parameter
+     * @return 0 on success, error code otherwise
+     */
+    fun setAudioCodecParameter(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val codec = arguments["codec"] as? Int ?: return -1
+        val parameter = arguments["parameter"] as? String ?: return -1
+        return portSipSdk?.setAudioCodecParameter(codec, parameter) ?: -1
+    }
+
+    /**
+     * Sets the encoder target bit rate for an audio codec.
+     * Local encoder only - nothing about it is signalled to the far end.
+     * sessionId must be a live call: unlike the video equivalent the SDK
+     * rejects -1 with -60024 (ECoreCallIdNotFound).
+     * @param arguments Map containing sessionId, codec and bitrateKbps
+     * @return 0 on success, error code otherwise
+     */
+    fun setAudioBitrate(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        // Flutter widens a Dart int to Int or Long depending on magnitude.
+        val sessionId = when (val raw = arguments["sessionId"]) {
+            is Int -> raw.toLong()
+            is Long -> raw
+            else -> return -1
+        }
+        val codec = arguments["codec"] as? Int ?: return -1
+        val bitrateKbps = arguments["bitrateKbps"] as? Int ?: return -1
+        return portSipSdk?.setAudioBitrate(sessionId, codec, bitrateKbps) ?: -1
     }
 
     /**
@@ -418,8 +603,39 @@ class PortsipController private constructor() : OnPortSIPEvent {
         val reportToConnectionService =
             (arguments["reportToConnectionService"] as? Boolean) ?: true
         val displayName = arguments["displayName"] as? String
+        val pendingCallId = (arguments["pendingCallId"] as? Number)?.toLong()
+        val keepSystemCallOnFailure =
+            (arguments["keepSystemCallOnFailure"] as? Boolean) ?: false
+
+        // A leftover system call from a previous call would make this one a
+        // second call in Telecom — clear it before dialing.
+        reapSessionlessCalls(except = pendingCallId)
 
         val sessionId = portSipSdk?.call(callee, sendSdp, videoCall) ?: -1L
+
+        if (sessionId > 0 && keepSystemCallOnFailure) {
+            synchronized(heldFailedSessions) { keepOnFailureSessions.add(sessionId) }
+        }
+
+        if (pendingCallId != null) {
+            // Bound or gone, it is no longer a session-less call.
+            cancelSessionlessWatchdog(pendingCallId)
+            if (sessionId > 0) {
+                // The Telecom call already exists — point it at the real session.
+                if (!PortsipConnectionService.bindPendingSession(pendingCallId, sessionId)) {
+                    // Ended from the system UI before the INVITE went out —
+                    // don't leave a session nobody is watching.
+                    PortsipLogger.w(COMPONENT, "pending call $pendingCallId gone before INVITE — dropping session $sessionId")
+                    portSipSdk?.hangUp(sessionId)
+                    synchronized(heldFailedSessions) { keepOnFailureSessions.remove(sessionId) }
+                    return -1
+                }
+            } else {
+                // The INVITE never left; take the pending call down with it.
+                endSessionlessCall(pendingCallId)
+            }
+            return sessionId.toInt()
+        }
 
         // Report outgoing call to ConnectionService (Android's CallKit equivalent)
         if (sessionId > 0 && reportToConnectionService && context != null) {
@@ -435,6 +651,88 @@ class PortsipController private constructor() : OnPortSIPEvent {
         // Convert to Int for cross-platform consistency
         // Session IDs from PortSIP SDK fit within 32-bit signed integer range
         return sessionId.toInt()
+    }
+
+    /**
+     * Starts a Telecom call for the callee without sending the INVITE. The
+     * Connection is keyed by a negative pending id until makeCall(pendingCallId)
+     * binds it to the SIP session. Returns 0 when the ConnectionService is off.
+     */
+    fun beginOutgoingCall(arguments: Map<String, Any?>): Int {
+        val callee = (arguments["callee"] as? String) ?: ""
+        val displayName = arguments["displayName"] as? String
+        val ctx = context
+        if (callee.isEmpty() || ctx == null || !PortsipConnectionService.isEnabled) return 0
+        reapSessionlessCalls()
+        val pendingCallId = synchronized(heldFailedSessions) { nextPendingCallId-- }
+        armSessionlessWatchdog(pendingCallId, pendingCallMaxLifetimeMs)
+        PortsipConnectionService.reportOutgoingCall(ctx, pendingCallId, callee, false, displayName)
+        return pendingCallId.toInt()
+    }
+
+    /** Ends a pending call that was never dialed. */
+    fun cancelOutgoingCall(arguments: Map<String, Any?>): Int {
+        val pendingCallId = (arguments["pendingCallId"] as? Number)?.toLong() ?: 0L
+        if (!PortsipConnectionService.isPendingCallId(pendingCallId)) return 0
+        cancelSessionlessWatchdog(pendingCallId)
+        PortsipConnectionService.cancelPendingCall(pendingCallId)
+        return 0
+    }
+
+    /**
+     * Ends the Telecom call held open after its SIP leg failed (see
+     * keepSystemCallOnFailure). No-op for anything else.
+     */
+    fun endSystemCall(arguments: Map<String, Any?>): Int {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        val held = synchronized(heldFailedSessions) { heldFailedSessions.remove(sessionId) }
+        if (!held) return 0
+        cancelSessionlessWatchdog(sessionId)
+        PortsipConnectionService.reportCallEnded(sessionId, android.telecom.DisconnectCause.ERROR)
+        return 0
+    }
+
+    /**
+     * Plays a file to the local user through the SDK audio engine.
+     * @param arguments Map containing fileUrl and loop
+     * @return 0 on success, error code otherwise
+     */
+    /// Completes off the calling thread: opening a file goes through the SDK's
+    /// decoder and can take several hundred milliseconds. The method-channel
+    /// handler runs on the main thread, so doing it there freezes the UI — and
+    /// an announcement starts exactly while the calling page is animating in.
+    fun startPlayingFileLocally(arguments: Map<String, Any?>, completion: (Int) -> Unit) {
+        playbackExecutor.execute {
+            val code = synchronized(sdkLock) {
+                val fileUrl = arguments["fileUrl"] as? String
+                val loop = arguments["loop"] as? Boolean ?: false
+                if (fileUrl == null) -1
+                else portSipSdk?.startPlayingFileLocally(fileUrl, loop, null) ?: -1
+            }
+            mainHandler.post { completion(code) }
+        }
+    }
+
+    /** Stops the local file playback. Off the calling thread, as the start is. */
+    fun stopPlayingFileLocally(completion: (Int) -> Unit) {
+        playbackExecutor.execute {
+            val code = synchronized(sdkLock) { portSipSdk?.stopPlayingFileLocally() ?: -1 }
+            mainHandler.post { completion(code) }
+        }
+    }
+
+    /** Counts RTP packets on a session; see onRTPPacketCallback. */
+    fun enableRtpCallback(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: -1L
+        val direction = (arguments["direction"] as? Number)?.toInt() ?: 0
+        synchronized(rtpCounts) { rtpCounts.remove(sessionId) }
+        return portSipSdk?.enableRtpCallback(sessionId, 0, direction)?.toInt() ?: -1
+    }
+
+    /** Enables/disables early media. */
+    fun enableEarlyMedia(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val enable = (arguments["enable"] as? Boolean) ?: false
+        return portSipSdk?.enableEarlyMedia(enable) ?: -1
     }
 
     /**
@@ -953,7 +1251,14 @@ class PortsipController private constructor() : OnPortSIPEvent {
      */
     fun handleConnectionServiceEndCall(sessionId: Long) = synchronized(sdkLock) {
         PortsipLogger.d(COMPONENT, "ConnectionService end call for session $sessionId")
-        portSipSdk?.hangUp(sessionId)
+        // A pending call (no INVITE yet) or a leg that already failed has no
+        // SDK session to hang up.
+        cancelSessionlessWatchdog(sessionId)
+        val noSdkSession = synchronized(heldFailedSessions) {
+            keepOnFailureSessions.remove(sessionId)
+            PortsipConnectionService.isPendingCallId(sessionId) || heldFailedSessions.remove(sessionId)
+        }
+        if (!noSdkSession) portSipSdk?.hangUp(sessionId)
     }
 
     /**
@@ -1069,10 +1374,14 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     override fun onInviteRinging(sessionId: Long, statusText: String?, statusCode: Int, sipMessage: String?) {
+        // A provisional response with SDP carries early media (the network's
+        // own ringback / announcement), so the app must not add a local tone.
+        val hasSdp = sipMessage?.contains("application/sdp", ignoreCase = true) == true
         val eventData = mapOf(
             "sessionId" to sessionId,
             "statusText" to (statusText ?: ""),
             "statusCode" to statusCode,
+            "hasSdp" to hasSdp,
             "sipMessage" to (sipMessage ?: "")
         )
         PortsipEventBridge.shared.sendEvent("onInviteRinging", eventData)
@@ -1119,10 +1428,19 @@ class PortsipController private constructor() : OnPortSIPEvent {
         // onInviteClosed).
         pcmRecorder.finish(sessionId)
 
+        val keepSystemCall = synchronized(heldFailedSessions) { keepOnFailureSessions.remove(sessionId) }
+        synchronized(rtpCounts) { rtpCounts.remove(sessionId) }
         // A merged-conference primary's Connection is transferred to a
         // surviving leg instead of ended (see transferSystemCallIfNeeded).
         if (PortsipConnectionService.transferSystemCallIfNeeded(sessionId) == null) {
-            PortsipConnectionService.reportCallEnded(sessionId, android.telecom.DisconnectCause.ERROR)
+            if (keepSystemCall && PortsipConnectionService.hasConnection(sessionId)) {
+                // Keep the Telecom call (and the audio route) up so the app
+                // can play a failure announcement; ended by endSystemCall.
+                synchronized(heldFailedSessions) { heldFailedSessions.add(sessionId) }
+                armSessionlessWatchdog(sessionId, heldFailedMaxLifetimeMs)
+            } else {
+                PortsipConnectionService.reportCallEnded(sessionId, android.telecom.DisconnectCause.ERROR)
+            }
         }
 
         val eventData = mapOf(
@@ -1151,6 +1469,8 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     override fun onInviteClosed(sessionId: Long, sipMessage: String?) {
+        synchronized(heldFailedSessions) { keepOnFailureSessions.remove(sessionId) }
+        synchronized(rtpCounts) { rtpCounts.remove(sessionId) }
         // Releases the part-file handles an app that never calls stopPcmRecord
         // would otherwise hold for the life of the process. The recording stays
         // collectable: an app stopping from its own call-ended handler gets
@@ -1217,7 +1537,17 @@ class PortsipController private constructor() : OnPortSIPEvent {
 
     // MARK: - Unused Delegate Methods (Required by Interface - Empty Implementations)
 
-    override fun onInviteSessionProgress(sessionId: Long, audioCodecNames: String?, videoCodecNames: String?, existsEarlyMedia: Boolean, existsAudio: Boolean, existsVideo: Boolean, sipMessage: String?) {}
+    override fun onInviteSessionProgress(sessionId: Long, audioCodecNames: String?, videoCodecNames: String?, existsEarlyMedia: Boolean, existsAudio: Boolean, existsVideo: Boolean, sipMessage: String?) {
+        val eventData = mapOf(
+            "sessionId" to sessionId,
+            "audioCodecs" to (audioCodecNames ?: ""),
+            "videoCodecs" to (videoCodecNames ?: ""),
+            "existsEarlyMedia" to existsEarlyMedia,
+            "existsAudio" to existsAudio,
+            "existsVideo" to existsVideo
+        )
+        PortsipEventBridge.shared.sendEvent("onInviteSessionProgress", eventData)
+    }
     override fun onInviteUpdated(sessionId: Long, audioCodecs: String?, videoCodecs: String?, screenCodecs: String?, existsAudio: Boolean, existsVideo: Boolean, existsScreen: Boolean, sipMessage: String?) {}
     override fun onInviteBeginingForward(forwardTo: String?) {}
     override fun onDialogStateUpdated(BLFMonitoredUri: String?, BLFDialogState: String?, BLFDialogId: String?, BLFDialogDirection: String?) {}
@@ -1245,7 +1575,13 @@ class PortsipController private constructor() : OnPortSIPEvent {
     override fun onSendOutOfDialogMessageFailure(messageId: Long, fromDisplayName: String?, from: String?, toDisplayName: String?, to: String?, reason: String?, code: Int, sipMessage: String?) {}
     override fun onSubscriptionFailure(subscribeId: Long, statusCode: Int) {}
     override fun onSubscriptionTerminated(subscribeId: Long) {}
-    override fun onPlayFileFinished(sessionId: Long, fileName: String?) {}
+    override fun onPlayFileFinished(sessionId: Long, fileName: String?) {
+        val eventData = mapOf(
+            "sessionId" to sessionId,
+            "fileName" to (fileName ?: "")
+        )
+        PortsipEventBridge.shared.sendEvent("onPlayFileFinished", eventData)
+    }
     override fun onStatistics(sessionId: Long, stat: String?) {
         val eventData = mapOf(
             "sessionId" to sessionId,
@@ -1255,7 +1591,28 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
     override fun onAudioDeviceChanged(audioDevice: PortSipEnumDefine.AudioDevice?, deviceSet: MutableSet<PortSipEnumDefine.AudioDevice>?) {}
     override fun onAudioFocusChange(focusState: Int) {}
-    override fun onRTPPacketCallback(sessionId: Long, mediaType: Int, direction: Int, rtpPacket: ByteArray?, packetSize: Int) {}
+    // Per-packet SDK callback: count only — nothing may block here. The
+    // aggregated count goes to Flutter on the first packet and every 50th.
+    override fun onRTPPacketCallback(sessionId: Long, mediaType: Int, direction: Int, rtpPacket: ByteArray?, packetSize: Int) {
+        val (packets, bytes) = synchronized(rtpCounts) {
+            val counter = rtpCounts.getOrPut(sessionId) { mutableMapOf() }
+                .getOrPut(direction) { longArrayOf(0L, 0L) }
+            counter[0] += 1
+            counter[1] += packetSize
+            Pair(counter[0], counter[1])
+        }
+        if (packets == 1L || packets % 50 == 0L) {
+            PortsipEventBridge.shared.sendEvent(
+                "onRtpPacket",
+                mapOf(
+                    "sessionId" to sessionId,
+                    "direction" to direction,
+                    "packets" to packets,
+                    "bytes" to bytes
+                )
+            )
+        }
+    }
     override fun onAudioRawCallback(sessionId: Long, callbackType: Int, data: ByteArray?, dataLength: Int, samplingFreqHz: Int) {
         if (data == null) return
         pcmRecorder.write(sessionId, callbackType, data, dataLength, samplingFreqHz)
@@ -1288,6 +1645,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
         }
 
         // Unregister and uninitialize SDK
+        portSipSdk?.stopPlayingFileLocally()
         portSipSdk?.unRegisterServer(0)
         portSipSdk?.unInitialize()
 
@@ -1316,6 +1674,8 @@ class PortsipController private constructor() : OnPortSIPEvent {
         audioConferenceActive = false
         // The sessions any open parts belong to are going away with the SDK.
         pcmRecorder.clear()
+        // A local file still playing into a torn-down engine crashes inside WebRTC.
+        portSipSdk?.stopPlayingFileLocally()
         portSipSdk?.unRegisterServer(0)
         portSipSdk?.unInitialize()
         portSipSdk?.setOnPortSIPEvent(null)

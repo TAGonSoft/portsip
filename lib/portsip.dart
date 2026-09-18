@@ -293,12 +293,22 @@ class Portsip {
   /// [displayName] - Name the system call UI shows for the callee. The number
   /// is shown when omitted. Set it at call time: iOS does not reliably honor
   /// display updates on outgoing calls after they start.
+  ///
+  /// [pendingCallId] - Id returned by [beginOutgoingCall]. The system call
+  /// started there is re-keyed to the new SIP session instead of a second
+  /// one being created, so the INVITE joins an already-live call.
+  ///
+  /// [keepSystemCallOnFailure] - When true, a SIP failure (busy, 404, …) does
+  /// NOT end the system call: the call UI and audio session stay up until
+  /// [endSystemCall] is called, so the app can play an announcement first.
   Future<int> makeCall({
     required String callee,
     required bool sendSdp,
     required bool videoCall,
     bool reportToConnectionService = true,
     String? displayName,
+    int? pendingCallId,
+    bool keepSystemCallOnFailure = false,
   }) async {
     _checkInitialized();
     return await PortsipPlatform.instance.makeCall(
@@ -307,7 +317,69 @@ class Portsip {
       videoCall: videoCall,
       reportToConnectionService: reportToConnectionService,
       displayName: displayName,
+      pendingCallId: pendingCallId,
+      keepSystemCallOnFailure: keepSystemCallOnFailure,
     );
+  }
+
+  /// Start an outgoing call in the system call UI (CallKit /
+  /// ConnectionService) WITHOUT sending the SIP INVITE yet.
+  ///
+  /// The system call goes live — on iOS the audio session activates and the
+  /// SDK audio engine starts — so local audio (see [startPlayingFileLocally])
+  /// plays on the call route while the app still holds the INVITE back.
+  /// Follow with [makeCall] passing the returned id as `pendingCallId`, or
+  /// [cancelOutgoingCall] to end it without ever dialing.
+  ///
+  /// Ending the pending call from the system UI is reported as the usual
+  /// `onCallKitEndCall` / `onConnectionServiceEndCall` event with the
+  /// pending id as its `sessionId`.
+  ///
+  /// [callee] - The number the system UI shows and dials.
+  /// [displayName] - Name the system call UI shows for the callee.
+  ///
+  /// Returns a negative pending call id (never a valid SDK session id), or 0
+  /// if the system call could not be started.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> beginOutgoingCall({
+    required String callee,
+    String? displayName,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.beginOutgoingCall(
+      callee: callee,
+      displayName: displayName,
+    );
+  }
+
+  /// End a system call started with [beginOutgoingCall] that was never
+  /// dialed. No-op once [makeCall] has bound a SIP session to it.
+  ///
+  /// [pendingCallId] - The id returned by [beginOutgoingCall].
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> cancelOutgoingCall({required int pendingCallId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.cancelOutgoingCall(
+      pendingCallId: pendingCallId,
+    );
+  }
+
+  /// End the system call of a session whose SIP leg already failed while
+  /// `keepSystemCallOnFailure` was set (see [makeCall]). Stops the audio
+  /// engine when it was the last call. No-op for sessions not held open.
+  ///
+  /// [sessionId] - The session ID whose system call should end.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> endSystemCall({required int sessionId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.endSystemCall(sessionId: sessionId);
   }
 
   /// Hang up a call
@@ -668,6 +740,83 @@ class Portsip {
     return await PortsipPlatform.instance.setLicenseKey(licenseKey: licenseKey);
   }
 
+  /// Set the instance ID published as the `+sip.instance` Contact parameter
+  ///
+  /// [instanceId] - A URN identifying this endpoint (RFC 5626), e.g.
+  /// `urn:uuid:...`. It must be unique per device and stay the same for the
+  /// lifetime of the install, so the server recognises the same endpoint
+  /// across re-registrations and network changes.
+  ///
+  /// This should be called after initialize() and before register(). The SDK
+  /// generates an instance ID of its own if this is never called.
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> setInstanceId({required String instanceId}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.setInstanceId(instanceId: instanceId);
+  }
+
+  /// Remove the account loaded by register()
+  ///
+  /// The core holds one account at a time, so register() on a core that
+  /// already has one is refused with -60095. Removing it frees the slot for
+  /// fresh credentials or a different user, without an unInitialize() +
+  /// initialize() cycle. Do not call it while a call is up.
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> removeUser() async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.removeUser();
+  }
+
+  /// Set the SIP keep-alive interval in seconds
+  ///
+  /// Keeps the NAT binding for the signaling transport open between
+  /// registrations. 0 disables it; the SDK recommends 30 or 50.
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> setKeepAliveTime({required int keepAliveTime}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.setKeepAliveTime(
+      keepAliveTime: keepAliveTime,
+    );
+  }
+
+  /// Send RTP keep-alive packets on established calls
+  ///
+  /// Holds the media NAT binding open while a leg is silent.
+  /// [keepAlivePayloadType] is usually 126 and [deltaTransmitTimeMS] ranges
+  /// 15000-300000. Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> setRtpKeepAlive({
+    required bool state,
+    int keepAlivePayloadType = 126,
+    int deltaTransmitTimeMS = 15000,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.setRtpKeepAlive(
+      state: state,
+      keepAlivePayloadType: keepAlivePayloadType,
+      deltaTransmitTimeMS: deltaTransmitTimeMS,
+    );
+  }
+
+  /// Set the PRACK (RFC 3262) mode
+  ///
+  /// 0 never (the SDK default), 1 only when sending a body and the far end
+  /// supports it, 2 whenever the far end supports it, 3 always.
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> setReliableProvisional({required int mode}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.setReliableProvisional(mode: mode);
+  }
+
   /// Enable or disable plugin debug logs
   ///
   /// [enabled] - true to enable debug logging, false to disable (default: false)
@@ -690,6 +839,59 @@ class Portsip {
     _checkInitialized();
     return await PortsipPlatform.instance.setAudioCodecs(
       audioCodecs: audioCodecs,
+    );
+  }
+
+  /// Set the SDP `fmtp` parameter line for an audio codec
+  ///
+  /// [codec] - the codec the parameter applies to
+  /// [parameter] - the `fmtp` value, passed to the SDK verbatim
+  ///
+  /// The string appears in the offer/answer as `a=fmtp:<pt> <parameter>`, so
+  /// it must use the parameters the codec defines: RFC 7587 for OPUS
+  /// (`maxaveragebitrate`, `stereo`, `cbr`, `useinbandfec`, `usedtx`),
+  /// RFC 4867 for AMR (`mode-set`, `octet-align`).
+  ///
+  /// Call this after [setAudioCodecs] and before placing a call — it does not
+  /// affect a call that is already negotiated.
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> setAudioCodecParameter({
+    required AudioCodec codec,
+    required String parameter,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.setAudioCodecParameter(
+      codec: codec,
+      parameter: parameter,
+    );
+  }
+
+  /// Set the encoder target bit rate for an audio codec
+  ///
+  /// [sessionId] - the live call to apply it to. Unlike the video equivalent
+  /// this has no "all calls" value — -1 is rejected with -60024
+  /// (ECoreCallIdNotFound), so call it per session once the call is up.
+  /// [codec] - the codec the bit rate applies to
+  /// [bitrateKbps] - target bit rate in kbit/s
+  ///
+  /// This drives the local encoder only; it is not signalled. Advertise the
+  /// matching ceiling to the far end with [setAudioCodecParameter]
+  /// (`maxaveragebitrate` for OPUS).
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> setAudioBitrate({
+    required int sessionId,
+    required AudioCodec codec,
+    required int bitrateKbps,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.setAudioBitrate(
+      sessionId: sessionId,
+      codec: codec,
+      bitrateKbps: bitrateKbps,
     );
   }
 
@@ -898,6 +1100,41 @@ class Portsip {
       timerSeconds: timerSeconds,
       refreshMode: refreshMode,
     );
+  }
+
+  /// Count RTP packets on a session. Diagnostic: the plugin does not forward
+  /// packets, it reports counts as `onRtpPacket` events (`RtpPacketEvent`) —
+  /// on the first packet per direction and then every 50 packets. Tells
+  /// whether early media announced in a 183 actually flows, or whether
+  /// audio is one-way. Pass [PortsipRtpDirection.none] to turn it off.
+  ///
+  /// [sessionId] - The session ID of the call.
+  /// [direction] - Which direction(s) to count.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> enableRtpCallback({
+    required int sessionId,
+    required PortsipRtpDirection direction,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.enableRtpCallback(
+      sessionId: sessionId,
+      direction: direction,
+    );
+  }
+
+  /// Enable/disable early media (183 Session Progress with SDP). Off by
+  /// default in the SDK. When on, remote ringback/announcements sent before
+  /// the answer are played and `onInviteSessionProgress` reports them.
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> enableEarlyMedia({required bool enable}) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.enableEarlyMedia(enable: enable);
   }
 
   /// Update an active call session (sends a re-INVITE)
@@ -1138,6 +1375,40 @@ class Portsip {
     return await PortsipPlatform.instance.stopPlayingFileToRemote(
       sessionId: sessionId,
     );
+  }
+
+  /// Play a file to the local user through the SDK audio engine — on the
+  /// current call route (earpiece / speaker / Bluetooth), not the media
+  /// stream. Not tied to a session: it works before an INVITE is sent (after
+  /// [beginOutgoingCall]) and after a session failed while its system call is
+  /// held open. Only one local file plays at a time; starting another
+  /// replaces it. A non-looping file reports `onPlayFileFinished` when done.
+  ///
+  /// [fileUrl] - Path of the file, e.g. `/…/ringback.wav`.
+  /// [loop] - Repeat the file until [stopPlayingFileLocally].
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> startPlayingFileLocally({
+    required String fileUrl,
+    bool loop = false,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.startPlayingFileLocally(
+      fileUrl: fileUrl,
+      loop: loop,
+    );
+  }
+
+  /// Stop the local file playback started with [startPlayingFileLocally].
+  ///
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> stopPlayingFileLocally() async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.stopPlayingFileLocally();
   }
 
   /// Unregister from the SIP server

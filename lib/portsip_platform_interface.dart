@@ -134,8 +134,33 @@ abstract class PortsipPlatform extends PlatformInterface {
     required bool videoCall,
     bool reportToConnectionService = true,
     String? displayName,
+    int? pendingCallId,
+    bool keepSystemCallOnFailure = false,
   }) async {
     throw UnimplementedError('makeCall has not been implemented.');
+  }
+
+  /// Starts a system call (CallKit / ConnectionService) for [callee] without
+  /// sending the INVITE. Returns a negative pending call id, or 0 on failure.
+  Future<int> beginOutgoingCall({
+    required String callee,
+    String? displayName,
+  }) async {
+    throw UnimplementedError('beginOutgoingCall has not been implemented.');
+  }
+
+  /// Ends a pending system call that was never dialed.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> cancelOutgoingCall({required int pendingCallId}) async {
+    throw UnimplementedError('cancelOutgoingCall has not been implemented.');
+  }
+
+  /// Ends the system call held open after [sessionId]'s SIP leg failed.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> endSystemCall({required int sessionId}) async {
+    throw UnimplementedError('endSystemCall has not been implemented.');
   }
 
   /// Terminates an active call.
@@ -401,6 +426,75 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError('setLicenseKey has not been implemented.');
   }
 
+  /// Sets the instance ID published as the `+sip.instance` Contact parameter
+  /// (RFC 5626).
+  ///
+  /// This should be called after [initialize] and before [register].
+  ///
+  /// Parameters:
+  /// - [instanceId]: A URN that is stable for the lifetime of the install and
+  ///   unique per device, e.g. `urn:uuid:...`
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> setInstanceId({required String instanceId}) async {
+    throw UnimplementedError('setInstanceId has not been implemented.');
+  }
+
+  /// Removes the account loaded by [register] from the native core.
+  ///
+  /// The core holds one account at a time: [register] on a core that already
+  /// has one is refused with -60095 and the loaded account is kept. Removing
+  /// it frees that slot, so fresh credentials — or a different user — can be
+  /// loaded without an [unInitialize] + [initialize] cycle.
+  ///
+  /// Do not call it while a call is up.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> removeUser() async {
+    throw UnimplementedError('removeUser has not been implemented.');
+  }
+
+  /// Sets the SIP keep-alive interval in seconds.
+  ///
+  /// Keeps the NAT binding for the signaling transport open between
+  /// registrations. 0 disables it; the SDK recommends 30 or 50.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> setKeepAliveTime({required int keepAliveTime}) async {
+    throw UnimplementedError('setKeepAliveTime has not been implemented.');
+  }
+
+  /// Sends RTP keep-alive packets on established calls.
+  ///
+  /// Holds the media NAT binding open while a leg is silent.
+  ///
+  /// Parameters:
+  /// - [state]: whether to send keep-alive packets
+  /// - [keepAlivePayloadType]: payload type of the packet, usually 126
+  /// - [deltaTransmitTimeMS]: send interval, 15000-300000
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> setRtpKeepAlive({
+    required bool state,
+    int keepAlivePayloadType = 126,
+    int deltaTransmitTimeMS = 15000,
+  }) async {
+    throw UnimplementedError('setRtpKeepAlive has not been implemented.');
+  }
+
+  /// Sets how reliable provisional responses (PRACK, RFC 3262) are used.
+  ///
+  /// Parameters:
+  /// - [mode]: 0 never (the SDK default), 1 only when sending a body and the
+  ///   far end supports it, 2 whenever the far end supports it, 3 always
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> setReliableProvisional({required int mode}) async {
+    throw UnimplementedError(
+      'setReliableProvisional has not been implemented.',
+    );
+  }
+
   /// Enables or disables plugin debug logging.
   ///
   /// When enabled, logs method calls, responses, and events for debugging.
@@ -423,6 +517,53 @@ abstract class PortsipPlatform extends PlatformInterface {
   /// Returns 0 on success, negative error code on failure.
   Future<int> setAudioCodecs({required List<AudioCodec> audioCodecs}) async {
     throw UnimplementedError('setAudioCodecs has not been implemented.');
+  }
+
+  /// Sets the SDP `fmtp` parameter line for an audio codec.
+  ///
+  /// The string is passed to the SDK verbatim and appears in the offer/answer
+  /// as `a=fmtp:<pt> <parameter>`, so it must use the media-type parameters
+  /// the codec defines — for OPUS see RFC 7587 (`maxaveragebitrate`, `stereo`,
+  /// `cbr`, `useinbandfec`, `usedtx`), for AMR see RFC 4867 (`mode-set`,
+  /// `octet-align`).
+  ///
+  /// Call it after [setAudioCodecs] and before placing a call; it has no
+  /// effect on a call that is already negotiated.
+  ///
+  /// Parameters:
+  /// - [codec]: the codec the parameter applies to
+  /// - [parameter]: the `fmtp` value, e.g. `'useinbandfec=1; usedtx=0'`
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> setAudioCodecParameter({
+    required AudioCodec codec,
+    required String parameter,
+  }) async {
+    throw UnimplementedError(
+      'setAudioCodecParameter has not been implemented.',
+    );
+  }
+
+  /// Sets the encoder target bit rate for an audio codec.
+  ///
+  /// This drives the local encoder only; it is not signalled. Use
+  /// [setAudioCodecParameter] to advertise the matching ceiling to the far end
+  /// (`maxaveragebitrate` for OPUS).
+  ///
+  /// Parameters:
+  /// - [sessionId]: the live call to apply it to. Unlike the video equivalent
+  ///   this has no "all calls" value — -1 is rejected with -60024
+  ///   (ECoreCallIdNotFound), so call it per session once the call is up.
+  /// - [codec]: the codec the bit rate applies to
+  /// - [bitrateKbps]: target bit rate in kbit/s
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> setAudioBitrate({
+    required int sessionId,
+    required AudioCodec codec,
+    required int bitrateKbps,
+  }) async {
+    throw UnimplementedError('setAudioBitrate has not been implemented.');
   }
 
   /// Enables or disables the audio manager.
@@ -716,6 +857,46 @@ abstract class PortsipPlatform extends PlatformInterface {
     throw UnimplementedError(
       'stopPlayingFileToRemote has not been implemented.',
     );
+  }
+
+  /// Plays the file at [fileUrl] to the local user through the SDK audio
+  /// engine.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> startPlayingFileLocally({
+    required String fileUrl,
+    bool loop = false,
+  }) async {
+    throw UnimplementedError(
+      'startPlayingFileLocally has not been implemented.',
+    );
+  }
+
+  /// Stops the local file playback.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> stopPlayingFileLocally() async {
+    throw UnimplementedError(
+      'stopPlayingFileLocally has not been implemented.',
+    );
+  }
+
+  /// Enables RTP packet counting on [sessionId] for [direction]
+  /// (reported as `onRtpPacket` events).
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> enableRtpCallback({
+    required int sessionId,
+    required PortsipRtpDirection direction,
+  }) async {
+    throw UnimplementedError('enableRtpCallback has not been implemented.');
+  }
+
+  /// Enables/disables early media.
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> enableEarlyMedia({required bool enable}) async {
+    throw UnimplementedError('enableEarlyMedia has not been implemented.');
   }
 
   /// Tears down the native SDK so a different user can be loaded via

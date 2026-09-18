@@ -91,6 +91,27 @@ enum PortsipMethodCall: String {
     /// Stops the file playback running on a session
     case stopPlayingFileToRemote = "stopPlayingFileToRemote"
 
+    /// Plays a file to the local user through the SDK audio engine
+    case startPlayingFileLocally = "startPlayingFileLocally"
+
+    /// Stops the local file playback
+    case stopPlayingFileLocally = "stopPlayingFileLocally"
+
+    /// Enables/disables early media 
+    case enableEarlyMedia = "enableEarlyMedia"
+
+    /// Counts RTP packets on a session (reported as onRtpPacket events)
+    case enableRtpCallback = "enableRtpCallback"
+
+    /// Starts a CallKit call for a callee without sending the INVITE
+    case beginOutgoingCall = "beginOutgoingCall"
+
+    /// Ends a pending CallKit call that was never dialed
+    case cancelOutgoingCall = "cancelOutgoingCall"
+
+    /// Ends the CallKit call held open after a SIP failure
+    case endSystemCall = "endSystemCall"
+
     // MARK: - CallKit Methods
     
     /// Configures CallKit provider with app name and settings
@@ -102,8 +123,29 @@ enum PortsipMethodCall: String {
     /// Sets the PortSIP license key
     case setLicenseKey = "setLicenseKey"
 
+    /// Sets the RFC 5626 instance ID carried in the Contact header
+    case setInstanceId = "setInstanceId"
+
+    /// Removes the loaded account, freeing the core's single account slot
+    case removeUser = "removeUser"
+
+    /// Sets the SIP keep-alive interval
+    case setKeepAliveTime = "setKeepAliveTime"
+
+    /// Sends RTP keep-alive packets on established calls
+    case setRtpKeepAlive = "setRtpKeepAlive"
+
+    /// Sets the PRACK (RFC 3262) mode
+    case setReliableProvisional = "setReliableProvisional"
+
     /// Configures audio codecs for the SIP session
     case setAudioCodecs = "setAudioCodecs"
+
+    /// Sets the SDP fmtp parameter line for an audio codec
+    case setAudioCodecParameter = "setAudioCodecParameter"
+
+    /// Sets the encoder target bit rate for an audio codec
+    case setAudioBitrate = "setAudioBitrate"
 
     /// Enables or disables the audio manager (critical for DTMF)
     case enableAudioManager = "enableAudioManager"

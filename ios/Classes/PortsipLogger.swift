@@ -43,7 +43,9 @@ class PortsipLogger {
     static func logResponse(_ component: String, _ method: String, _ result: Any?) {
         guard isEnabled else { return }
         let status: String
-        if let intResult = result as? Int, intResult < 0 {
+        // beginOutgoingCall hands out negative pending ids by design (0 = failed).
+        if let intResult = result as? Int,
+           method == "beginOutgoingCall" ? intResult == 0 : intResult < 0 {
             status = "❌"
         } else {
             status = "✓"

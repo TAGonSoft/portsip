@@ -102,11 +102,53 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Stops the file playback running on a session */
     STOP_PLAYING_FILE_TO_REMOTE("stopPlayingFileToRemote"),
 
+    /** Plays a file to the local user through the SDK audio engine */
+    START_PLAYING_FILE_LOCALLY("startPlayingFileLocally"),
+
+    /** Stops the local file playback */
+    STOP_PLAYING_FILE_LOCALLY("stopPlayingFileLocally"),
+
+    /** Enables/disables early media */
+    ENABLE_EARLY_MEDIA("enableEarlyMedia"),
+
+    /** Counts RTP packets on a session (reported as onRtpPacket events) */
+    ENABLE_RTP_CALLBACK("enableRtpCallback"),
+
+    /** Starts a Telecom call for a callee without sending the INVITE */
+    BEGIN_OUTGOING_CALL("beginOutgoingCall"),
+
+    /** Ends a pending Telecom call that was never dialed */
+    CANCEL_OUTGOING_CALL("cancelOutgoingCall"),
+
+    /** Ends the Telecom call held open after a SIP failure */
+    END_SYSTEM_CALL("endSystemCall"),
+
     /** Sets the PortSIP license key */
     SET_LICENSE_KEY("setLicenseKey"),
 
+    /** Sets the RFC 5626 instance ID carried in the Contact header */
+    SET_INSTANCE_ID("setInstanceId"),
+
+    /** Removes the loaded account, freeing the core's single account slot */
+    REMOVE_USER("removeUser"),
+
+    /** Sets the SIP keep-alive interval */
+    SET_KEEP_ALIVE_TIME("setKeepAliveTime"),
+
+    /** Sends RTP keep-alive packets on established calls */
+    SET_RTP_KEEP_ALIVE("setRtpKeepAlive"),
+
+    /** Sets the PRACK (RFC 3262) mode */
+    SET_RELIABLE_PROVISIONAL("setReliableProvisional"),
+
     /** Configures audio codecs for the SIP session */
     SET_AUDIO_CODECS("setAudioCodecs"),
+
+    /** Sets the SDP fmtp parameter line for an audio codec */
+    SET_AUDIO_CODEC_PARAMETER("setAudioCodecParameter"),
+
+    /** Sets the encoder target bit rate for an audio codec */
+    SET_AUDIO_BITRATE("setAudioBitrate"),
 
     /** Enables or disables the audio manager (critical for DTMF) */
     ENABLE_AUDIO_MANAGER("enableAudioManager"),

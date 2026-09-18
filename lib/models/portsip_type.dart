@@ -98,6 +98,19 @@ enum PortsipRecordMode {
   }
 }
 
+/// Which RTP direction(s) a stream callback reports. Values match the SDK's
+/// DIRECTION_MODE on both platforms.
+enum PortsipRtpDirection {
+  none(0),
+  sendRecv(1),
+  send(2),
+  recv(3);
+
+  /// The integer value passed to the native SDK
+  final int value;
+  const PortsipRtpDirection(this.value);
+}
+
 /// How a file played to the remote party is mixed into the outgoing stream.
 ///
 /// Used by `startPlayingFileToRemote`. [mixedWithMicrophone] is what an

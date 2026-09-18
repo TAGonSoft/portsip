@@ -331,6 +331,63 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.START_PLAYING_FILE_LOCALLY -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "startPlayingFileLocally", arguments)
+                    PortsipController.shared.startPlayingFileLocally(arguments) { resultValue ->
+                        PortsipLogger.logResponse(COMPONENT, "startPlayingFileLocally", resultValue)
+                        result.success(resultValue)
+                    }
+                }
+
+                PortsipMethodCall.STOP_PLAYING_FILE_LOCALLY -> {
+                    PortsipLogger.logCall(COMPONENT, "stopPlayingFileLocally")
+                    PortsipController.shared.stopPlayingFileLocally { resultValue ->
+                        PortsipLogger.logResponse(COMPONENT, "stopPlayingFileLocally", resultValue)
+                        result.success(resultValue)
+                    }
+                }
+
+                PortsipMethodCall.ENABLE_EARLY_MEDIA -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "enableEarlyMedia", arguments)
+                    val resultValue = PortsipController.shared.enableEarlyMedia(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "enableEarlyMedia", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.ENABLE_RTP_CALLBACK -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "enableRtpCallback", arguments)
+                    val resultValue = PortsipController.shared.enableRtpCallback(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "enableRtpCallback", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.BEGIN_OUTGOING_CALL -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "beginOutgoingCall", arguments)
+                    val resultValue = PortsipController.shared.beginOutgoingCall(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "beginOutgoingCall", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.CANCEL_OUTGOING_CALL -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "cancelOutgoingCall", arguments)
+                    val resultValue = PortsipController.shared.cancelOutgoingCall(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "cancelOutgoingCall", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.END_SYSTEM_CALL -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "endSystemCall", arguments)
+                    val resultValue = PortsipController.shared.endSystemCall(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "endSystemCall", resultValue)
+                    result.success(resultValue)
+                }
+
                 PortsipMethodCall.SET_LICENSE_KEY -> {
                     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
                     PortsipLogger.logCall(COMPONENT, "setLicenseKey", arguments)
@@ -339,11 +396,66 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.SET_INSTANCE_ID -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "setInstanceId", arguments)
+                    val resultValue = PortsipController.shared.setInstanceId(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "setInstanceId", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.REMOVE_USER -> {
+                    PortsipLogger.logCall(COMPONENT, "removeUser", null)
+                    val resultValue = PortsipController.shared.removeUser()
+                    PortsipLogger.logResponse(COMPONENT, "removeUser", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.SET_KEEP_ALIVE_TIME -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "setKeepAliveTime", arguments)
+                    val resultValue = PortsipController.shared.setKeepAliveTime(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "setKeepAliveTime", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.SET_RTP_KEEP_ALIVE -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "setRtpKeepAlive", arguments)
+                    val resultValue = PortsipController.shared.setRtpKeepAlive(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "setRtpKeepAlive", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.SET_RELIABLE_PROVISIONAL -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "setReliableProvisional", arguments)
+                    val resultValue = PortsipController.shared.setReliableProvisional(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "setReliableProvisional", resultValue)
+                    result.success(resultValue)
+                }
+
                 PortsipMethodCall.SET_AUDIO_CODECS -> {
                     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
                     PortsipLogger.logCall(COMPONENT, "setAudioCodecs", arguments)
                     val resultValue = PortsipController.shared.setAudioCodecs(arguments)
                     PortsipLogger.logResponse(COMPONENT, "setAudioCodecs", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.SET_AUDIO_CODEC_PARAMETER -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "setAudioCodecParameter", arguments)
+                    val resultValue = PortsipController.shared.setAudioCodecParameter(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "setAudioCodecParameter", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.SET_AUDIO_BITRATE -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "setAudioBitrate", arguments)
+                    val resultValue = PortsipController.shared.setAudioBitrate(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "setAudioBitrate", resultValue)
                     result.success(resultValue)
                 }
 

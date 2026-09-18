@@ -1,3 +1,38 @@
+## 1.0.0
+
+* **Breaking**: `AudioCodec` values now match the SDK's `AUDIOCODEC_TYPE`.
+* **Feature**: two-phase outgoing calls. `beginOutgoingCall({callee,
+displayName})` starts the system call and returns a negative pending id without
+sending the INVITE; `makeCall(..., pendingCallId:)` dials into it;
+`cancelOutgoingCall({pendingCallId})` ends it undialed.
+* **Feature**: `makeCall(..., keepSystemCallOnFailure: true)` keeps the system
+call up after a SIP failure until `endSystemCall({sessionId})`.
+* **Safety**: a system call with no SIP session behind it is now self-limiting —
+a watchdog ends it if the app never does, and any leftover is reaped at the
+start of the next call.
+* **Feature**: `enableEarlyMedia({enable})`.
+* **Feature**: local file playback — `startPlayingFileLocally({fileUrl, loop})`,
+`stopPlayingFileLocally()`, and `onPlayFileFinished` (`PlayFileFinishedEvent`).
+* **Feature**: `setAudioCodecParameter({codec, parameter})`.
+* **Feature**: `setAudioBitrate({sessionId, codec, bitrateKbps})` sets the
+encoder target. Needs a live session.
+* **Feature**: `InviteAnsweredEvent.audioCodecs` and
+`InviteSessionProgressEvent.audioCodecs` carry the negotiated codecs,
+`#`-separated.
+* **Feature**: `removeUser()` frees the account slot loaded by `register()`.
+* **Feature**: `setKeepAliveTime({keepAliveTime})` sets the SIP keep-alive
+interval in seconds; 0 disables it.
+* **Feature**: `setRtpKeepAlive({state, keepAlivePayloadType,
+deltaTransmitTimeMS})` sends RTP keep-alive packets on established calls.
+* **Feature**: `setReliableProvisional({mode})` sets PRACK (RFC 3262): 0 never
+(the SDK default), 1 when sending a body, 2 when supported, 3 always.
+* **Feature**: `setInstanceId({instanceId})` sets the RFC 5626 `+sip.instance`
+Contact parameter. Call it between `initialize()` and `register()`; the SDK
+generates one otherwise.
+* **Diagnostic**: `enableRtpCallback({sessionId, direction})` counts RTP packets
+and reports `onRtpPacket` (`RtpPacketEvent`: first packet, then every 50th).
+* `InviteRingingEvent` now carries `statusCode` / `statusText` and `hasSdp`.
+
 ## 0.2.1
 
 * **Breaking**: the plugin now requires **PortSIP VoIP SDK V19.6.2**. The SDK's

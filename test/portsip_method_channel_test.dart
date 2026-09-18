@@ -52,6 +52,10 @@ void main() {
               return 0; // Success
             case 'setAudioCodecs':
               return 0; // Success
+            case 'setAudioCodecParameter':
+              return 0; // Success
+            case 'setAudioBitrate':
+              return 0; // Success
             case 'registerServer':
               return 0; // Success
             case 'refreshRegistration':
@@ -792,6 +796,99 @@ void main() {
     test('returns result from native', () async {
       final result = await platform.setAudioCodecs(
         audioCodecs: [AudioCodec.opus],
+      );
+      expect(result, 0);
+    });
+  });
+
+  group('setAudioCodecParameter', () {
+    test('calls method channel with correct method name', () async {
+      await platform.setAudioCodecParameter(
+        codec: AudioCodec.opus,
+        parameter: 'useinbandfec=1',
+      );
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'setAudioCodecParameter');
+    });
+
+    test('passes the codec value and the fmtp string verbatim', () async {
+      const fmtp =
+          'maxaveragebitrate=24000; stereo=0; cbr=0; useinbandfec=1; usedtx=0';
+      await platform.setAudioCodecParameter(
+        codec: AudioCodec.opus,
+        parameter: fmtp,
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['codec'], AudioCodec.opus.value);
+      expect(args['parameter'], fmtp);
+    });
+
+    test('handles an empty parameter string', () async {
+      await platform.setAudioCodecParameter(
+        codec: AudioCodec.amr,
+        parameter: '',
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['codec'], AudioCodec.amr.value);
+      expect(args['parameter'], '');
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.setAudioCodecParameter(
+        codec: AudioCodec.opus,
+        parameter: 'usedtx=0',
+      );
+      expect(result, 0);
+    });
+  });
+
+  group('setAudioBitrate', () {
+    test('calls method channel with correct method name', () async {
+      await platform.setAudioBitrate(
+        sessionId: -1,
+        codec: AudioCodec.opus,
+        bitrateKbps: 24,
+      );
+
+      expect(methodCalls.length, 1);
+      expect(methodCalls.first.method, 'setAudioBitrate');
+    });
+
+    test('passes sessionId, codec and bitrate', () async {
+      await platform.setAudioBitrate(
+        sessionId: 12345,
+        codec: AudioCodec.opus,
+        bitrateKbps: 24,
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], 12345);
+      expect(args['codec'], AudioCodec.opus.value);
+      expect(args['bitrateKbps'], 24);
+    });
+
+    test('passes the sessionId through untouched', () async {
+      // The SDK rejects -1 here with -60024 rather than treating it as "all
+      // calls", but the channel must still forward whatever it is given.
+      await platform.setAudioBitrate(
+        sessionId: -1,
+        codec: AudioCodec.amrWb,
+        bitrateKbps: 12,
+      );
+
+      final args = methodCalls.first.arguments as Map;
+      expect(args['sessionId'], -1);
+      expect(args['codec'], AudioCodec.amrWb.value);
+    });
+
+    test('returns result from native', () async {
+      final result = await platform.setAudioBitrate(
+        sessionId: -1,
+        codec: AudioCodec.opus,
+        bitrateKbps: 24,
       );
       expect(result, 0);
     });

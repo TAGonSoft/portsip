@@ -60,6 +60,15 @@ enum PortsipConstants {
         /// Key for exists video flag
         static let existsVideo = "existsVideo"
 
+        /// Key for exists early media flag (183 Session Progress)
+        static let existsEarlyMedia = "existsEarlyMedia"
+
+        /// Key for whether a provisional response carried SDP (early media)
+        static let hasSdp = "hasSdp"
+
+        /// Key for a played file's name
+        static let fileName = "fileName"
+
         /// Key for failure code
         static let code = "code"
 

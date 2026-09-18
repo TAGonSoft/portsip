@@ -127,7 +127,7 @@ void main() {
         final map = account.toMap();
 
         expect(map['audioCodecs'], isA<List>());
-        expect(map['audioCodecs'], [0, 8, 111, 9]);
+        expect(map['audioCodecs'], [0, 8, 105, 9]);
       });
 
       test('handles empty audioCodecs list by using defaults', () {
@@ -268,90 +268,40 @@ void main() {
   });
 
   group('AudioCodec', () {
-    test('has correct value for pcmu', () {
-      expect(AudioCodec.pcmu.value, 0);
+    // Values are RTP payload types and must match the native SDK exactly:
+    // AUDIOCODEC_TYPE in PortSIPTypes.hxx (iOS) and
+    // PortSipEnumDefine.ENUM_AUDIOCODEC_* (Android).
+    const sdkValues = <AudioCodec, int>{
+      AudioCodec.pcmu: 0,
+      AudioCodec.gsm: 3,
+      AudioCodec.pcma: 8,
+      AudioCodec.g722: 9,
+      AudioCodec.g729: 18,
+      AudioCodec.ilbc: 97,
+      AudioCodec.amr: 98,
+      AudioCodec.amrWb: 99,
+      AudioCodec.speex: 100,
+      AudioCodec.dtmf: 101,
+      AudioCodec.speexWb: 102,
+      AudioCodec.isacWb: 103,
+      AudioCodec.isacSwb: 104,
+      AudioCodec.opus: 105,
+      AudioCodec.g7221: 121,
+    };
+
+    sdkValues.forEach((codec, value) {
+      test('has the SDK value for ${codec.name}', () {
+        expect(codec.value, value);
+      });
     });
 
-    test('has correct value for gsm', () {
-      expect(AudioCodec.gsm.value, 3);
+    test('covers every codec the SDK defines, and nothing else', () {
+      expect(AudioCodec.values.toSet(), sdkValues.keys.toSet());
     });
 
-    test('has correct value for g723', () {
-      expect(AudioCodec.g723.value, 4);
-    });
-
-    test('has correct value for dvi4_8k', () {
-      expect(AudioCodec.dvi4_8k.value, 5);
-    });
-
-    test('has correct value for dvi4_16k', () {
-      expect(AudioCodec.dvi4_16k.value, 6);
-    });
-
-    test('has correct value for pcma', () {
-      expect(AudioCodec.pcma.value, 8);
-    });
-
-    test('has correct value for g722', () {
-      expect(AudioCodec.g722.value, 9);
-    });
-
-    test('has correct value for ilbc', () {
-      expect(AudioCodec.ilbc.value, 97);
-    });
-
-    test('has correct value for speex', () {
-      expect(AudioCodec.speex.value, 98);
-    });
-
-    test('has correct value for speexWb', () {
-      expect(AudioCodec.speexWb.value, 99);
-    });
-
-    test('has correct value for isacWb', () {
-      expect(AudioCodec.isacWb.value, 100);
-    });
-
-    test('has correct value for isacSwb', () {
-      expect(AudioCodec.isacSwb.value, 102);
-    });
-
-    test('has correct value for g729', () {
-      expect(AudioCodec.g729.value, 18);
-    });
-
-    test('has correct value for opus', () {
-      expect(AudioCodec.opus.value, 111);
-    });
-
-    test('has correct value for amr', () {
-      expect(AudioCodec.amr.value, 112);
-    });
-
-    test('has correct value for amrWb', () {
-      expect(AudioCodec.amrWb.value, 113);
-    });
-
-    test('has correct value for dtmf', () {
-      expect(AudioCodec.dtmf.value, 101);
-    });
-
-    test('all codecs have unique values except dtmf and isacSwb', () {
-      final values = <int>[];
-      for (final codec in AudioCodec.values) {
-        // dtmf and isacSwb both have value 101
-        if (codec != AudioCodec.dtmf) {
-          values.add(codec.value);
-        }
-      }
-
-      // Check that remaining values are unique
-      final uniqueValues = values.toSet();
-      expect(uniqueValues.length, values.length);
-    });
-
-    test('enum has expected number of values', () {
-      expect(AudioCodec.values.length, 17);
+    test('all codecs have unique values', () {
+      final values = AudioCodec.values.map((codec) => codec.value).toList();
+      expect(values.toSet().length, values.length);
     });
   });
 

@@ -180,6 +180,20 @@ class PortsipCallKitProvider: NSObject {
         }
     }
 
+    /// Re-keys a pending outgoing call (see [PortsipController.beginOutgoingCall])
+    /// to the SIP session that was dialed for it. Returns false when the
+    /// pending call is gone (ended from the system UI before the INVITE).
+    func rebindSession(from pendingId: Int, to sessionId: Int) -> Bool {
+        return sessionLock.sync {
+            guard let uuid = sessionToUUID.removeValue(forKey: pendingId) else { return false }
+            sessionToUUID[sessionId] = uuid
+            if let name = pendingDisplayNames.removeValue(forKey: pendingId) {
+                pendingDisplayNames[sessionId] = name
+            }
+            return true
+        }
+    }
+
     /// Thread-safe removal of session-to-UUID mapping
     private func removeSession(_ sessionId: Int) {
         sessionLock.sync {

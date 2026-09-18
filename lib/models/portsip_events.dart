@@ -69,13 +69,65 @@ class InviteTryingEvent extends PortsipEvent {
       : super('onInviteTrying', {'sessionId': sessionId});
 }
 
-/// Event emitted when the remote party is ringing.
+/// Event emitted when the remote party is ringing (180) or the call is
+/// progressing (183). [statusCode] tells the two apart.
 class InviteRingingEvent extends PortsipEvent {
   /// The session ID of the call
   final int sessionId;
 
-  InviteRingingEvent(this.sessionId)
-      : super('onInviteRinging', {'sessionId': sessionId});
+  /// SIP provisional status code (180 Ringing, 183 Session Progress)
+  final int statusCode;
+
+  /// SIP status text
+  final String statusText;
+
+  /// Whether the response carried SDP — early media from the network (its
+  /// own ringback or an announcement). Requires `enableEarlyMedia(true)` to
+  /// be heard; either way the app should not add a local ringback to it.
+  final bool hasSdp;
+
+  InviteRingingEvent(
+    this.sessionId, {
+    this.statusCode = 0,
+    this.statusText = '',
+    this.hasSdp = false,
+  }) : super('onInviteRinging', {
+          'sessionId': sessionId,
+          'statusCode': statusCode,
+          'statusText': statusText,
+          'hasSdp': hasSdp,
+        });
+}
+
+/// Event emitted on 183 Session Progress. [existsEarlyMedia] is true when the
+/// remote side streams early media (network ringback / announcement) that the
+/// SDK plays — the app should stop its own ringback then. Requires
+/// `enableEarlyMedia(true)`.
+class InviteSessionProgressEvent extends PortsipEvent {
+  /// The session ID of the call
+  final int sessionId;
+
+  /// Whether the remote side is sending early media
+  final bool existsEarlyMedia;
+
+  /// The codecs that won the negotiation, as the SDK names them (e.g. `OPUS`,
+  /// `PCMA`), several separated by `#`. Empty when the SDK reported none.
+  ///
+  /// A 183 with SDP settles the codec before the 200 OK, so this is the
+  /// earliest the outcome is known — and for a leg that only ever reaches
+  /// early media it is the only time. The same list arrives again on
+  /// [InviteAnsweredEvent], so a consumer acting on it wants to expect both.
+  final String audioCodecs;
+
+  InviteSessionProgressEvent(
+    this.sessionId, {
+    required this.existsEarlyMedia,
+    this.audioCodecs = '',
+  }) : super('onInviteSessionProgress', {
+          'sessionId': sessionId,
+          'existsEarlyMedia': existsEarlyMedia,
+          'audioCodecs': audioCodecs,
+        });
 }
 
 /// Event emitted when the call is answered by the remote party.
@@ -83,8 +135,20 @@ class InviteAnsweredEvent extends PortsipEvent {
   /// The session ID of the call
   final int sessionId;
 
-  InviteAnsweredEvent(this.sessionId)
-      : super('onInviteAnswered', {'sessionId': sessionId});
+  /// The codecs that actually won the negotiation, as the SDK names them
+  /// (e.g. `OPUS`, `PCMA`). More than one is separated by `#` — a speech
+  /// codec plus `telephone-event` is the usual pair. Empty when the SDK
+  /// reported none.
+  ///
+  /// This is the answered leg's outcome, not what was offered: the offer is
+  /// whatever [Portsip.setAudioCodecs] last set.
+  final String audioCodecs;
+
+  InviteAnsweredEvent(this.sessionId, {this.audioCodecs = ''})
+      : super('onInviteAnswered', {
+          'sessionId': sessionId,
+          'audioCodecs': audioCodecs,
+        });
 }
 
 /// Event emitted when the call is fully connected.
@@ -121,6 +185,59 @@ class InviteFailureEvent extends PortsipEvent {
           'sessionId': sessionId,
           'reason': reason,
           'code': code,
+        });
+}
+
+// =============================================================================
+// File Playback Events
+// =============================================================================
+
+/// Event emitted when a non-looping file started with
+/// `startPlayingFileToRemote` or `startPlayingFileLocally` reaches its end.
+class PlayFileFinishedEvent extends PortsipEvent {
+  /// The session the file was played to; -1 or 0 for local playback
+  final int sessionId;
+
+  /// The file that finished
+  final String fileName;
+
+  PlayFileFinishedEvent(this.sessionId, this.fileName)
+      : super('onPlayFileFinished', {
+          'sessionId': sessionId,
+          'fileName': fileName,
+        });
+}
+
+// =============================================================================
+// RTP Packet Count Events
+// =============================================================================
+
+/// Aggregated RTP packet counts for one session and direction, emitted while
+/// `enableRtpCallback` is on: once for the first packet, then every 50.
+class RtpPacketEvent extends PortsipEvent {
+  /// The session ID of the call
+  final int sessionId;
+
+  /// 2 = sent, 3 = received (SDK DIRECTION_MODE)
+  final int direction;
+
+  /// Cumulative packets seen in this direction
+  final int packets;
+
+  /// Cumulative bytes seen in this direction
+  final int bytes;
+
+  bool get isReceived => direction == 3;
+
+  RtpPacketEvent(this.sessionId, {
+    required this.direction,
+    required this.packets,
+    required this.bytes,
+  }) : super('onRtpPacket', {
+          'sessionId': sessionId,
+          'direction': direction,
+          'packets': packets,
+          'bytes': bytes,
         });
 }
 
@@ -421,9 +538,23 @@ PortsipEvent toTypedEvent(PortsipEvent event) {
     case 'onInviteTrying':
       return InviteTryingEvent(event.data?['sessionId'] as int? ?? -1);
     case 'onInviteRinging':
-      return InviteRingingEvent(event.data?['sessionId'] as int? ?? -1);
+      return InviteRingingEvent(
+        event.data?['sessionId'] as int? ?? -1,
+        statusCode: event.data?['statusCode'] as int? ?? 0,
+        statusText: event.data?['statusText'] as String? ?? '',
+        hasSdp: event.data?['hasSdp'] as bool? ?? false,
+      );
+    case 'onInviteSessionProgress':
+      return InviteSessionProgressEvent(
+        event.data?['sessionId'] as int? ?? -1,
+        existsEarlyMedia: event.data?['existsEarlyMedia'] as bool? ?? false,
+        audioCodecs: event.data?['audioCodecs'] as String? ?? '',
+      );
     case 'onInviteAnswered':
-      return InviteAnsweredEvent(event.data?['sessionId'] as int? ?? -1);
+      return InviteAnsweredEvent(
+        event.data?['sessionId'] as int? ?? -1,
+        audioCodecs: event.data?['audioCodecs'] as String? ?? '',
+      );
     case 'onInviteConnected':
       return InviteConnectedEvent(event.data?['sessionId'] as int? ?? -1);
     case 'onInviteClosed':
@@ -433,6 +564,22 @@ PortsipEvent toTypedEvent(PortsipEvent event) {
         event.data?['sessionId'] as int? ?? -1,
         event.data?['reason'] as String? ?? '',
         event.data?['code'] as int? ?? 0,
+      );
+
+    // File playback events
+    case 'onPlayFileFinished':
+      return PlayFileFinishedEvent(
+        event.data?['sessionId'] as int? ?? -1,
+        event.data?['fileName'] as String? ?? '',
+      );
+
+    // RTP packet count events
+    case 'onRtpPacket':
+      return RtpPacketEvent(
+        event.data?['sessionId'] as int? ?? -1,
+        direction: event.data?['direction'] as int? ?? 0,
+        packets: event.data?['packets'] as int? ?? 0,
+        bytes: event.data?['bytes'] as int? ?? 0,
       );
 
     // Media statistics events

@@ -89,11 +89,50 @@ void main() {
 
     group('InviteRingingEvent', () {
       test('creates event with correct properties', () {
-        final event = InviteRingingEvent(12345);
+        final event = InviteRingingEvent(
+          12345,
+          statusCode: 180,
+          statusText: 'Ringing',
+        );
 
         expect(event.name, 'onInviteRinging');
         expect(event.sessionId, 12345);
-        expect(event.data, {'sessionId': 12345});
+        expect(event.statusCode, 180);
+        expect(event.data, {
+          'sessionId': 12345,
+          'statusCode': 180,
+          'statusText': 'Ringing',
+          'hasSdp': false,
+        });
+      });
+    });
+
+    group('InviteSessionProgressEvent', () {
+      test('creates event with correct properties', () {
+        final event = InviteSessionProgressEvent(
+          12345,
+          existsEarlyMedia: true,
+        );
+
+        expect(event.name, 'onInviteSessionProgress');
+        expect(event.sessionId, 12345);
+        expect(event.existsEarlyMedia, isTrue);
+        expect(event.audioCodecs, '');
+      });
+
+      test('carries the negotiated codecs settled by the 183', () {
+        final event = InviteSessionProgressEvent(
+          12345,
+          existsEarlyMedia: true,
+          audioCodecs: 'OPUS#telephone-event',
+        );
+
+        expect(event.audioCodecs, 'OPUS#telephone-event');
+        expect(event.data, {
+          'sessionId': 12345,
+          'existsEarlyMedia': true,
+          'audioCodecs': 'OPUS#telephone-event',
+        });
       });
     });
 
@@ -103,7 +142,15 @@ void main() {
 
         expect(event.name, 'onInviteAnswered');
         expect(event.sessionId, 12345);
-        expect(event.data, {'sessionId': 12345});
+        expect(event.audioCodecs, '');
+        expect(event.data, {'sessionId': 12345, 'audioCodecs': ''});
+      });
+
+      test('carries the negotiated codecs', () {
+        final event = InviteAnsweredEvent(12345, audioCodecs: 'OPUS');
+
+        expect(event.audioCodecs, 'OPUS');
+        expect(event.data, {'sessionId': 12345, 'audioCodecs': 'OPUS'});
       });
     });
 
@@ -431,12 +478,51 @@ void main() {
         expect((typed as InviteRingingEvent).sessionId, 12345);
       });
 
+      test('converts onInviteSessionProgress', () {
+        final generic = PortsipEvent('onInviteSessionProgress', {
+          'sessionId': 12345,
+          'existsEarlyMedia': true,
+          'audioCodecs': 'OPUS',
+        });
+        final typed = toTypedEvent(generic);
+
+        expect(typed, isA<InviteSessionProgressEvent>());
+        expect((typed as InviteSessionProgressEvent).existsEarlyMedia, isTrue);
+        expect(typed.audioCodecs, 'OPUS');
+      });
+
+      test('converts onInviteSessionProgress without codecs', () {
+        final generic = PortsipEvent('onInviteSessionProgress', {
+          'sessionId': 12345,
+          'existsEarlyMedia': false,
+        });
+        final typed = toTypedEvent(generic);
+
+        expect(typed, isA<InviteSessionProgressEvent>());
+        // Absent from the payload — falls back to empty, never null.
+        expect((typed as InviteSessionProgressEvent).audioCodecs, '');
+      });
+
       test('converts onInviteAnswered', () {
         final generic = PortsipEvent('onInviteAnswered', {'sessionId': 12345});
         final typed = toTypedEvent(generic);
 
         expect(typed, isA<InviteAnsweredEvent>());
         expect((typed as InviteAnsweredEvent).sessionId, 12345);
+        // Absent from the payload — falls back to empty, never null.
+        expect(typed.audioCodecs, '');
+      });
+
+      test('converts onInviteAnswered with negotiated codecs', () {
+        final generic = PortsipEvent('onInviteAnswered', {
+          'sessionId': 12345,
+          'audioCodecs': 'OPUS#telephone-event',
+        });
+        final typed = toTypedEvent(generic);
+
+        expect(typed, isA<InviteAnsweredEvent>());
+        expect((typed as InviteAnsweredEvent).audioCodecs,
+            'OPUS#telephone-event');
       });
 
       test('converts onInviteConnected', () {

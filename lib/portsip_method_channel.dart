@@ -57,7 +57,11 @@ class MethodChannelPortsip extends PortsipPlatform {
   /// Helper to log method responses
   void _logResponse(String method, dynamic result) {
     if (!_logsEnabled) return;
-    final status = (result is int && result < 0) ? '❌' : '✓';
+    // beginOutgoingCall hands out negative pending ids by design (0 = failed).
+    final failed = method == 'beginOutgoingCall'
+        ? result == 0
+        : result is int && result < 0;
+    final status = failed ? '❌' : '✓';
     debugPrint('$_tag ◀ $method | $status result: $result');
   }
 
@@ -217,6 +221,8 @@ class MethodChannelPortsip extends PortsipPlatform {
     required bool videoCall,
     bool reportToConnectionService = true,
     String? displayName,
+    int? pendingCallId,
+    bool keepSystemCallOnFailure = false,
   }) async {
     final args = {
       'callee': callee,
@@ -224,6 +230,8 @@ class MethodChannelPortsip extends PortsipPlatform {
       'videoCall': videoCall,
       'reportToConnectionService': reportToConnectionService,
       if (displayName != null) 'displayName': displayName,
+      if (pendingCallId != null) 'pendingCallId': pendingCallId,
+      'keepSystemCallOnFailure': keepSystemCallOnFailure,
     };
     _logCall('makeCall', args);
     try {
@@ -237,6 +245,79 @@ class MethodChannelPortsip extends PortsipPlatform {
       return sessionId;
     } on PlatformException catch (e) {
       _logError('makeCall', e);
+      return -1;
+    }
+  }
+
+  /// Starts a system call without sending the INVITE.
+  ///
+  /// Invokes the native 'beginOutgoingCall' method via MethodChannel.
+  ///
+  /// Returns a negative pending call id, or 0 on failure.
+  @override
+  Future<int> beginOutgoingCall({
+    required String callee,
+    String? displayName,
+  }) async {
+    final args = {
+      'callee': callee,
+      if (displayName != null) 'displayName': displayName,
+    };
+    _logCall('beginOutgoingCall', args);
+    try {
+      final result = await methodChannel.invokeMethod<dynamic>(
+        'beginOutgoingCall',
+        args,
+      );
+      final pendingCallId = (result as num?)?.toInt() ?? 0;
+      _logResponse('beginOutgoingCall', pendingCallId);
+      return pendingCallId;
+    } on PlatformException catch (e) {
+      _logError('beginOutgoingCall', e);
+      return 0;
+    }
+  }
+
+  /// Ends a pending system call that was never dialed.
+  ///
+  /// Invokes the native 'cancelOutgoingCall' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> cancelOutgoingCall({required int pendingCallId}) async {
+    final args = {'pendingCallId': pendingCallId};
+    _logCall('cancelOutgoingCall', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'cancelOutgoingCall',
+        args,
+      );
+      _logResponse('cancelOutgoingCall', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('cancelOutgoingCall', e);
+      return -1;
+    }
+  }
+
+  /// Ends the system call held open after a SIP failure.
+  ///
+  /// Invokes the native 'endSystemCall' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> endSystemCall({required int sessionId}) async {
+    final args = {'sessionId': sessionId};
+    _logCall('endSystemCall', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'endSystemCall',
+        args,
+      );
+      _logResponse('endSystemCall', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('endSystemCall', e);
       return -1;
     }
   }
@@ -734,6 +815,121 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Sets the RFC 5626 instance ID carried in the Contact header.
+  ///
+  /// Invokes the native 'setInstanceId' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> setInstanceId({required String instanceId}) async {
+    final args = {'instanceId': instanceId};
+    _logCall('setInstanceId', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'setInstanceId',
+        args,
+      );
+      _logResponse('setInstanceId', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('setInstanceId', e);
+      return -1;
+    }
+  }
+
+  /// Removes the account loaded by register(), freeing the core's single
+  /// account slot.
+  ///
+  /// Invokes the native 'removeUser' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> removeUser() async {
+    _logCall('removeUser', null);
+    try {
+      final result = await methodChannel.invokeMethod<int>('removeUser');
+      _logResponse('removeUser', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('removeUser', e);
+      return -1;
+    }
+  }
+
+  /// Sets the SIP keep-alive interval.
+  ///
+  /// Invokes the native 'setKeepAliveTime' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> setKeepAliveTime({required int keepAliveTime}) async {
+    final args = {'keepAliveTime': keepAliveTime};
+    _logCall('setKeepAliveTime', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'setKeepAliveTime',
+        args,
+      );
+      _logResponse('setKeepAliveTime', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('setKeepAliveTime', e);
+      return -1;
+    }
+  }
+
+  /// Sends RTP keep-alive packets on established calls.
+  ///
+  /// Invokes the native 'setRtpKeepAlive' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> setRtpKeepAlive({
+    required bool state,
+    int keepAlivePayloadType = 126,
+    int deltaTransmitTimeMS = 15000,
+  }) async {
+    final args = {
+      'state': state,
+      'keepAlivePayloadType': keepAlivePayloadType,
+      'deltaTransmitTimeMS': deltaTransmitTimeMS,
+    };
+    _logCall('setRtpKeepAlive', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'setRtpKeepAlive',
+        args,
+      );
+      _logResponse('setRtpKeepAlive', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('setRtpKeepAlive', e);
+      return -1;
+    }
+  }
+
+  /// Sets the PRACK (RFC 3262) mode.
+  ///
+  /// Invokes the native 'setReliableProvisional' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> setReliableProvisional({required int mode}) async {
+    final args = {'mode': mode};
+    _logCall('setReliableProvisional', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'setReliableProvisional',
+        args,
+      );
+      _logResponse('setReliableProvisional', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('setReliableProvisional', e);
+      return -1;
+    }
+  }
+
   /// Configures audio codecs for the SIP session.
   ///
   /// Invokes the native 'setAudioCodecs' method via MethodChannel.
@@ -754,6 +950,61 @@ class MethodChannelPortsip extends PortsipPlatform {
       return result ?? -1;
     } on PlatformException catch (e) {
       _logError('setAudioCodecs', e);
+      return -1;
+    }
+  }
+
+  /// Sets the SDP `fmtp` parameter line for an audio codec.
+  ///
+  /// Invokes the native 'setAudioCodecParameter' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> setAudioCodecParameter({
+    required AudioCodec codec,
+    required String parameter,
+  }) async {
+    final args = {'codec': codec.value, 'parameter': parameter};
+    _logCall('setAudioCodecParameter', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'setAudioCodecParameter',
+        args,
+      );
+      _logResponse('setAudioCodecParameter', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('setAudioCodecParameter', e);
+      return -1;
+    }
+  }
+
+  /// Sets the encoder target bit rate for an audio codec.
+  ///
+  /// Invokes the native 'setAudioBitrate' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> setAudioBitrate({
+    required int sessionId,
+    required AudioCodec codec,
+    required int bitrateKbps,
+  }) async {
+    final args = {
+      'sessionId': sessionId,
+      'codec': codec.value,
+      'bitrateKbps': bitrateKbps,
+    };
+    _logCall('setAudioBitrate', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'setAudioBitrate',
+        args,
+      );
+      _logResponse('setAudioBitrate', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('setAudioBitrate', e);
       return -1;
     }
   }
@@ -1281,6 +1532,98 @@ class MethodChannelPortsip extends PortsipPlatform {
       return result ?? -1;
     } on PlatformException catch (e) {
       _logError('stopPlayingFileToRemote', e);
+      return -1;
+    }
+  }
+
+  /// Plays a file to the local user through the SDK audio engine.
+  ///
+  /// Invokes the native 'startPlayingFileLocally' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> startPlayingFileLocally({
+    required String fileUrl,
+    bool loop = false,
+  }) async {
+    final args = {'fileUrl': fileUrl, 'loop': loop};
+    _logCall('startPlayingFileLocally', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'startPlayingFileLocally',
+        args,
+      );
+      _logResponse('startPlayingFileLocally', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('startPlayingFileLocally', e);
+      return -1;
+    }
+  }
+
+  /// Stops the local file playback.
+  ///
+  /// Invokes the native 'stopPlayingFileLocally' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> stopPlayingFileLocally() async {
+    _logCall('stopPlayingFileLocally');
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'stopPlayingFileLocally',
+      );
+      _logResponse('stopPlayingFileLocally', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('stopPlayingFileLocally', e);
+      return -1;
+    }
+  }
+
+  /// Enables RTP packet counting on a session.
+  ///
+  /// Invokes the native 'enableRtpCallback' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> enableRtpCallback({
+    required int sessionId,
+    required PortsipRtpDirection direction,
+  }) async {
+    final args = {'sessionId': sessionId, 'direction': direction.value};
+    _logCall('enableRtpCallback', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'enableRtpCallback',
+        args,
+      );
+      _logResponse('enableRtpCallback', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('enableRtpCallback', e);
+      return -1;
+    }
+  }
+
+  /// Enables/disables early media.
+  ///
+  /// Invokes the native 'enableEarlyMedia' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> enableEarlyMedia({required bool enable}) async {
+    final args = {'enable': enable};
+    _logCall('enableEarlyMedia', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'enableEarlyMedia',
+        args,
+      );
+      _logResponse('enableEarlyMedia', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('enableEarlyMedia', e);
       return -1;
     }
   }

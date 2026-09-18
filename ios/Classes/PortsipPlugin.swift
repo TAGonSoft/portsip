@@ -222,6 +222,51 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.stopPlayingFileToRemote(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "stopPlayingFileToRemote", resultValue)
             result(resultValue)
+        case .startPlayingFileLocally:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "startPlayingFileLocally", arguments)
+            PortsipController.shared.startPlayingFileLocally(arguments: arguments) { resultValue in
+                PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "startPlayingFileLocally", resultValue)
+                result(resultValue)
+            }
+        case .stopPlayingFileLocally:
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "stopPlayingFileLocally")
+            PortsipController.shared.stopPlayingFileLocally { resultValue in
+                PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "stopPlayingFileLocally", resultValue)
+                result(resultValue)
+            }
+        case .enableEarlyMedia:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "enableEarlyMedia", arguments)
+            let resultValue = PortsipController.shared.enableEarlyMedia(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "enableEarlyMedia", resultValue)
+            result(resultValue)
+        case .enableRtpCallback:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "enableRtpCallback", arguments)
+            let resultValue = PortsipController.shared.enableRtpCallback(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "enableRtpCallback", resultValue)
+            result(resultValue)
+        case .beginOutgoingCall:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "beginOutgoingCall", arguments)
+            // Completes once CallKit has activated the audio session.
+            PortsipController.shared.beginOutgoingCall(arguments: arguments) { resultValue in
+                PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "beginOutgoingCall", resultValue)
+                result(resultValue)
+            }
+        case .cancelOutgoingCall:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "cancelOutgoingCall", arguments)
+            let resultValue = PortsipController.shared.cancelOutgoingCall(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "cancelOutgoingCall", resultValue)
+            result(resultValue)
+        case .endSystemCall:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "endSystemCall", arguments)
+            let resultValue = PortsipController.shared.endSystemCall(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "endSystemCall", resultValue)
+            result(resultValue)
         case .configureCallKit:
             let arguments = call.arguments as? [String: Any] ?? [:]
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "configureCallKit", arguments)
@@ -250,11 +295,52 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.setLicenseKey(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setLicenseKey", resultValue)
             result(resultValue)
+        case .setInstanceId:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "setInstanceId", arguments)
+            let resultValue = PortsipController.shared.setInstanceId(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setInstanceId", resultValue)
+            result(resultValue)
+        case .removeUser:
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "removeUser", nil)
+            let resultValue = PortsipController.shared.removeUser()
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "removeUser", resultValue)
+            result(resultValue)
+        case .setKeepAliveTime:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "setKeepAliveTime", arguments)
+            let resultValue = PortsipController.shared.setKeepAliveTime(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setKeepAliveTime", resultValue)
+            result(resultValue)
+        case .setRtpKeepAlive:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "setRtpKeepAlive", arguments)
+            let resultValue = PortsipController.shared.setRtpKeepAlive(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setRtpKeepAlive", resultValue)
+            result(resultValue)
+        case .setReliableProvisional:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "setReliableProvisional", arguments)
+            let resultValue = PortsipController.shared.setReliableProvisional(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setReliableProvisional", resultValue)
+            result(resultValue)
         case .setAudioCodecs:
             let arguments = call.arguments as? [String: Any] ?? [:]
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "setAudioCodecs", arguments)
             let resultValue = PortsipController.shared.setAudioCodecs(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setAudioCodecs", resultValue)
+            result(resultValue)
+        case .setAudioCodecParameter:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "setAudioCodecParameter", arguments)
+            let resultValue = PortsipController.shared.setAudioCodecParameter(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setAudioCodecParameter", resultValue)
+            result(resultValue)
+        case .setAudioBitrate:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "setAudioBitrate", arguments)
+            let resultValue = PortsipController.shared.setAudioBitrate(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setAudioBitrate", resultValue)
             result(resultValue)
         case .enableAudioManager:
             let arguments = call.arguments as? [String: Any] ?? [:]
