@@ -1379,10 +1379,8 @@ class Portsip {
 
   /// Play a file to the local user through the SDK audio engine — on the
   /// current call route (earpiece / speaker / Bluetooth), not the media
-  /// stream. Not tied to a session: it works before an INVITE is sent (after
-  /// [beginOutgoingCall]) and after a session failed while its system call is
-  /// held open. Only one local file plays at a time; starting another
-  /// replaces it. A non-looping file reports `onPlayFileFinished` when done.
+  /// stream. Only one local file plays at a time; starting another replaces
+  /// it. A non-looping file reports `onPlayFileFinished` when done.
   ///
   /// [fileUrl] - Path of the file, e.g. `/…/ringback.wav`.
   /// [loop] - Repeat the file until [stopPlayingFileLocally].
