@@ -175,3 +175,20 @@ enum PortsipLogLevel {
     );
   }
 }
+
+/// Which outgoing SIP messages a header added with `addSipMessageHeader`
+/// applies to.
+enum PortsipSipMessageType {
+  /// Requests only (INVITE, UPDATE, BYE, ...).
+  requests(1),
+
+  /// Responses only.
+  responses(2),
+
+  /// Requests and responses.
+  both(3);
+
+  /// The integer value passed to the native SDK
+  final int value;
+  const PortsipSipMessageType(this.value);
+}

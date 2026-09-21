@@ -713,6 +713,53 @@ await portsip.stopPlayingFileToRemote(sessionId: sessionId);
 > Playback is per session, like recording. To reach every participant of a
 > conference, play the file on each leg.
 
+## Custom SIP Headers
+
+`addSipMessageHeader` attaches a header to the SIP messages the SDK sends. A
+header is registered against a session id and a method name, not against one
+message, and the SDK stamps it onto each matching message **as it is sent**. It
+stays until it is removed or cleared; the plugin never clears headers itself.
+
+```dart
+// Only this call's requests, every method (re-INVITE, UPDATE, INFO, BYE).
+final headerId = await portsip.addSipMessageHeader(
+  sessionId: sessionId,
+  methodName: 'ALL',
+  msgType: PortsipSipMessageType.requests,
+  headerName: 'X-Session-Id',
+  headerValue: sessionUuid,
+);
+
+await portsip.removeAddedSipMessageHeader(addedSipMessageId: headerId);
+await portsip.clearAddedSipMessageHeaders(); // all of them
+```
+
+`sessionId: -1` targets every session, plus session-less requests such as
+REGISTER. The header name must be a SIP token and the value must not contain CR
+or LF; anything else throws `ArgumentError`.
+
+### Tagging a call's initial INVITE
+
+A call's session id only exists once `makeCall` returns, and because headers
+are stamped on at send time, its INVITE may still be queued by then (DNS, a new
+TLS connection). Removing a `-1` header as soon as `makeCall` returns can
+therefore strip it from the very INVITE it was meant for. The safe sequence:
+
+1. Before `makeCall`, add the header with `sessionId: -1, methodName: 'INVITE'`.
+2. Keep it until a *response* to the call arrives — `InviteSessionProgressEvent`,
+   `InviteRingingEvent`, `InviteAnsweredEvent` or `InviteFailureEvent`. Those
+   prove the INVITE, and any resend with credentials, went out.
+   (`InviteTryingEvent` does not: it carries no received message.)
+3. Then add the same header with the call's `sessionId` and `methodName: 'ALL'`,
+   and only after that remove the `-1` one, so no request slips through
+   untagged.
+4. When the call ends, keep its header a while before removing it: a BYE sent
+   through CallKit leaves after `hangUp` has returned.
+
+While the `-1` header is up, an INVITE that *another* live session sends (a
+re-INVITE) carries it too — the SDK cannot scope a header to a session that
+does not exist yet.
+
 ## SIP Signaling Logs
 
 `enableCallbackSignaling` mirrors the SIP messages the SDK sends and/or receives

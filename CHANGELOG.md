@@ -29,6 +29,11 @@ deltaTransmitTimeMS})` sends RTP keep-alive packets on established calls.
 * **Feature**: `setInstanceId({instanceId})` sets the RFC 5626 `+sip.instance`
 Contact parameter. Call it between `initialize()` and `register()`; the SDK
 generates one otherwise.
+* **Feature**: custom SIP headers — `addSipMessageHeader({sessionId, methodName,
+msgType, headerName, headerValue})`, `removeAddedSipMessageHeader({addedSipMessageId})`
+and `clearAddedSipMessageHeaders()`. `msgType` is the new `PortsipSipMessageType`.
+Headers are stamped on at send time; the README has the sequence for tagging a
+call's initial INVITE.
 * **Diagnostic**: `enableRtpCallback({sessionId, direction})` counts RTP packets
 and reports `onRtpPacket` (`RtpPacketEvent`: first packet, then every 50th).
 * `InviteRingingEvent` now carries `statusCode` / `statusText` and `hasSdp`.

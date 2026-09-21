@@ -126,6 +126,15 @@ enum PortsipMethodCall: String {
     /// Sets the RFC 5626 instance ID carried in the Contact header
     case setInstanceId = "setInstanceId"
 
+    /// Adds a custom header to outgoing SIP messages
+    case addSipMessageHeader = "addSipMessageHeader"
+
+    /// Removes a header added by addSipMessageHeader
+    case removeAddedSipMessageHeader = "removeAddedSipMessageHeader"
+
+    /// Removes every header added by addSipMessageHeader
+    case clearAddedSipMessageHeaders = "clearAddedSipMessageHeaders"
+
     /// Removes the loaded account, freeing the core's single account slot
     case removeUser = "removeUser"
 

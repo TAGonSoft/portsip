@@ -383,6 +383,52 @@ class PortsipController private constructor() : OnPortSIPEvent {
     }
 
     /**
+     * Adds a custom header to outgoing SIP messages.
+     * @param arguments Map containing sessionId (-1 for all), methodName
+     * ("ALL" for all), msgType (1 requests, 2 responses, 3 both), headerName
+     * and headerValue
+     * @return The added-header id (> 0), or an error code. The SDK's id is a
+     * long and is returned whole: truncated, it could no longer be removed.
+     */
+    fun addSipMessageHeader(arguments: Map<String, Any?>): Long = synchronized(sdkLock) {
+        val headerName = (arguments["headerName"] as? String)?.takeIf { it.isNotEmpty() }
+            ?: return -1L
+        val headerValue = (arguments["headerValue"] as? String) ?: return -1L
+        val sessionId = (arguments["sessionId"] as? Number)?.toLong() ?: return -1L
+        val msgType = (arguments["msgType"] as? Number)?.toInt()?.takeIf { it in 1..3 }
+            ?: return -1L
+        val methodName = (arguments["methodName"] as? String) ?: "ALL"
+        return portSipSdk?.addSipMessageHeader(
+            sessionId,
+            methodName,
+            msgType,
+            headerName,
+            headerValue,
+        ) ?: -1L
+    }
+
+    /**
+     * Removes a header added by addSipMessageHeader.
+     * @param arguments Map containing addedSipMessageId
+     * @return 0 on success, error code otherwise
+     */
+    fun removeAddedSipMessageHeader(arguments: Map<String, Any?>): Int = synchronized(sdkLock) {
+        val addedSipMessageId = (arguments["addedSipMessageId"] as? Number)?.toLong()
+            ?: return -1
+        return portSipSdk?.removeAddedSipMessageHeader(addedSipMessageId) ?: -1
+    }
+
+    /**
+     * Removes every header added by addSipMessageHeader. The SDK reports
+     * nothing, so this always returns 0.
+     * @return 0
+     */
+    fun clearAddedSipMessageHeaders(): Int = synchronized(sdkLock) {
+        portSipSdk?.clearAddedSipMessageHeaders()
+        return 0
+    }
+
+    /**
      * Removes the account loaded by setUser, freeing the core's single account
      * slot so a different account can be loaded without a full unInitialize.
      * The SDK reports nothing, so this always returns 0.

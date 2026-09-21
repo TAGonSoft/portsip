@@ -558,7 +558,7 @@ class PortsipController: NSObject {
     /// (RFC 5626). Must be stable for the lifetime of the install and unique
     /// per device; the SDK generates one itself if this is never called.
     /// - Parameter arguments: Dictionary containing:
-    ///   - instanceId: The instance ID, as a URN
+    ///   - instanceId: The instance ID, as a bare UUID (the SDK adds urn:uuid:)
     /// - Returns: 0 on success, error code otherwise
     func setInstanceId(arguments: [String: Any]) -> Int {
         return sdkQueue.sync {
@@ -567,6 +567,59 @@ class PortsipController: NSObject {
                 return -1
             }
             return Int(portSIPSDK.setInstanceId(instanceId))
+        }
+    }
+
+    /// Adds a custom header to outgoing SIP messages.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - sessionId: Only this session's messages carry it; -1 for all
+    ///   - methodName: Only this method carries it, e.g. "INVITE"; "ALL" for all
+    ///   - msgType: 1 requests, 2 responses, 3 both
+    ///   - headerName: The header name
+    ///   - headerValue: The header value
+    /// - Returns: The added-header id (> 0), or an error code
+    func addSipMessageHeader(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            guard let headerName = arguments["headerName"] as? String,
+                  !headerName.isEmpty,
+                  let headerValue = arguments["headerValue"] as? String,
+                  let sessionId = arguments["sessionId"] as? Int,
+                  let msgType = arguments["msgType"] as? Int,
+                  (1...3).contains(msgType) else {
+                return -1
+            }
+            let methodName = arguments["methodName"] as? String ?? "ALL"
+            return Int(portSIPSDK.addSipMessageHeader(
+                sessionId,
+                methodName: methodName,
+                msgType: Int32(msgType),
+                headerName: headerName,
+                headerValue: headerValue
+            ))
+        }
+    }
+
+    /// Removes a header added by addSipMessageHeader.
+    /// - Parameter arguments: Dictionary containing:
+    ///   - addedSipMessageId: The id addSipMessageHeader returned
+    /// - Returns: 0 on success, error code otherwise
+    func removeAddedSipMessageHeader(arguments: [String: Any]) -> Int {
+        return sdkQueue.sync {
+            guard let addedSipMessageId = arguments["addedSipMessageId"] as? Int
+            else {
+                return -1
+            }
+            return Int(portSIPSDK.removeAddedSipMessageHeader(addedSipMessageId))
+        }
+    }
+
+    /// Removes every header added by addSipMessageHeader. The SDK reports
+    /// nothing, so this always returns 0.
+    /// - Returns: 0
+    func clearAddedSipMessageHeaders() -> Int {
+        return sdkQueue.sync {
+            portSIPSDK.clearAddedSipMessageHeaders()
+            return 0
         }
     }
 

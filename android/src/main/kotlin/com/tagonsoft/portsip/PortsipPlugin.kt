@@ -404,6 +404,30 @@ class PortsipPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.success(resultValue)
                 }
 
+                PortsipMethodCall.ADD_SIP_MESSAGE_HEADER -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "addSipMessageHeader", arguments)
+                    val resultValue = PortsipController.shared.addSipMessageHeader(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "addSipMessageHeader", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.REMOVE_ADDED_SIP_MESSAGE_HEADER -> {
+                    val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
+                    PortsipLogger.logCall(COMPONENT, "removeAddedSipMessageHeader", arguments)
+                    val resultValue =
+                        PortsipController.shared.removeAddedSipMessageHeader(arguments)
+                    PortsipLogger.logResponse(COMPONENT, "removeAddedSipMessageHeader", resultValue)
+                    result.success(resultValue)
+                }
+
+                PortsipMethodCall.CLEAR_ADDED_SIP_MESSAGE_HEADERS -> {
+                    PortsipLogger.logCall(COMPONENT, "clearAddedSipMessageHeaders", null)
+                    val resultValue = PortsipController.shared.clearAddedSipMessageHeaders()
+                    PortsipLogger.logResponse(COMPONENT, "clearAddedSipMessageHeaders", resultValue)
+                    result.success(null)
+                }
+
                 PortsipMethodCall.REMOVE_USER -> {
                     PortsipLogger.logCall(COMPONENT, "removeUser", null)
                     val resultValue = PortsipController.shared.removeUser()

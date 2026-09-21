@@ -129,6 +129,15 @@ enum class PortsipMethodCall(val methodName: String) {
     /** Sets the RFC 5626 instance ID carried in the Contact header */
     SET_INSTANCE_ID("setInstanceId"),
 
+    /** Adds a custom header to outgoing SIP messages */
+    ADD_SIP_MESSAGE_HEADER("addSipMessageHeader"),
+
+    /** Removes a header added by addSipMessageHeader */
+    REMOVE_ADDED_SIP_MESSAGE_HEADER("removeAddedSipMessageHeader"),
+
+    /** Removes every header added by addSipMessageHeader */
+    CLEAR_ADDED_SIP_MESSAGE_HEADERS("clearAddedSipMessageHeaders"),
+
     /** Removes the loaded account, freeing the core's single account slot */
     REMOVE_USER("removeUser"),
 

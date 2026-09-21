@@ -837,6 +837,77 @@ class MethodChannelPortsip extends PortsipPlatform {
     }
   }
 
+  /// Adds a custom header to outgoing SIP messages.
+  ///
+  /// Invokes the native 'addSipMessageHeader' method via MethodChannel.
+  ///
+  /// Returns the added-header id (> 0), or -1 / an error code on failure.
+  @override
+  Future<int> addSipMessageHeader({
+    required int sessionId,
+    required String methodName,
+    PortsipSipMessageType msgType = PortsipSipMessageType.requests,
+    required String headerName,
+    required String headerValue,
+  }) async {
+    final args = {
+      'sessionId': sessionId,
+      'methodName': methodName,
+      'msgType': msgType.value,
+      'headerName': headerName,
+      'headerValue': headerValue,
+    };
+    _logCall('addSipMessageHeader', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'addSipMessageHeader',
+        args,
+      );
+      _logResponse('addSipMessageHeader', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('addSipMessageHeader', e);
+      return -1;
+    }
+  }
+
+  /// Removes a header added by addSipMessageHeader().
+  ///
+  /// Invokes the native 'removeAddedSipMessageHeader' method via MethodChannel.
+  ///
+  /// Returns 0 on success, -1 or error code on failure.
+  @override
+  Future<int> removeAddedSipMessageHeader({
+    required int addedSipMessageId,
+  }) async {
+    final args = {'addedSipMessageId': addedSipMessageId};
+    _logCall('removeAddedSipMessageHeader', args);
+    try {
+      final result = await methodChannel.invokeMethod<int>(
+        'removeAddedSipMessageHeader',
+        args,
+      );
+      _logResponse('removeAddedSipMessageHeader', result);
+      return result ?? -1;
+    } on PlatformException catch (e) {
+      _logError('removeAddedSipMessageHeader', e);
+      return -1;
+    }
+  }
+
+  /// Removes every header added by addSipMessageHeader().
+  ///
+  /// Invokes the native 'clearAddedSipMessageHeaders' method via MethodChannel.
+  @override
+  Future<void> clearAddedSipMessageHeaders() async {
+    _logCall('clearAddedSipMessageHeaders', null);
+    try {
+      await methodChannel.invokeMethod<void>('clearAddedSipMessageHeaders');
+    } on PlatformException catch (e) {
+      _logError('clearAddedSipMessageHeaders', e);
+    }
+  }
+
   /// Removes the account loaded by register(), freeing the core's single
   /// account slot.
   ///

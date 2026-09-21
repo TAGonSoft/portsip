@@ -432,12 +432,55 @@ abstract class PortsipPlatform extends PlatformInterface {
   /// This should be called after [initialize] and before [register].
   ///
   /// Parameters:
-  /// - [instanceId]: A URN that is stable for the lifetime of the install and
-  ///   unique per device, e.g. `urn:uuid:...`
+  /// - [instanceId]: A bare UUID, stable for the lifetime of the install and
+  ///   unique per device. The SDK adds the `urn:uuid:` wrapping itself.
   ///
   /// Returns 0 on success, negative error code on failure.
   Future<int> setInstanceId({required String instanceId}) async {
     throw UnimplementedError('setInstanceId has not been implemented.');
+  }
+
+  /// Adds a custom header to outgoing SIP messages.
+  ///
+  /// Parameters:
+  /// - [sessionId]: only messages of this session carry the header; -1 adds it
+  ///   to every message, including session-less ones such as REGISTER
+  /// - [methodName]: only messages with this method carry it, e.g. `INVITE`;
+  ///   `ALL` adds it to every method
+  /// - [msgType]: requests, responses or both
+  /// - [headerName]/[headerValue]: the header to add
+  ///
+  /// Returns the added-header id (> 0) to pass to
+  /// [removeAddedSipMessageHeader], or a negative error code.
+  Future<int> addSipMessageHeader({
+    required int sessionId,
+    required String methodName,
+    PortsipSipMessageType msgType = PortsipSipMessageType.requests,
+    required String headerName,
+    required String headerValue,
+  }) async {
+    throw UnimplementedError('addSipMessageHeader has not been implemented.');
+  }
+
+  /// Removes a header added by [addSipMessageHeader].
+  ///
+  /// Parameters:
+  /// - [addedSipMessageId]: the id [addSipMessageHeader] returned
+  ///
+  /// Returns 0 on success, negative error code on failure.
+  Future<int> removeAddedSipMessageHeader({
+    required int addedSipMessageId,
+  }) async {
+    throw UnimplementedError(
+      'removeAddedSipMessageHeader has not been implemented.',
+    );
+  }
+
+  /// Removes every header added by [addSipMessageHeader].
+  Future<void> clearAddedSipMessageHeaders() async {
+    throw UnimplementedError(
+      'clearAddedSipMessageHeaders has not been implemented.',
+    );
   }
 
   /// Removes the account loaded by [register] from the native core.

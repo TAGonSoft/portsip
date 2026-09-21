@@ -301,6 +301,23 @@ public class PortsipPlugin: NSObject, FlutterPlugin {
             let resultValue = PortsipController.shared.setInstanceId(arguments: arguments)
             PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "setInstanceId", resultValue)
             result(resultValue)
+        case .addSipMessageHeader:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "addSipMessageHeader", arguments)
+            let resultValue = PortsipController.shared.addSipMessageHeader(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "addSipMessageHeader", resultValue)
+            result(resultValue)
+        case .removeAddedSipMessageHeader:
+            let arguments = call.arguments as? [String: Any] ?? [:]
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "removeAddedSipMessageHeader", arguments)
+            let resultValue = PortsipController.shared.removeAddedSipMessageHeader(arguments: arguments)
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "removeAddedSipMessageHeader", resultValue)
+            result(resultValue)
+        case .clearAddedSipMessageHeaders:
+            PortsipLogger.logCall(PortsipPlugin.COMPONENT, "clearAddedSipMessageHeaders", nil)
+            let resultValue = PortsipController.shared.clearAddedSipMessageHeaders()
+            PortsipLogger.logResponse(PortsipPlugin.COMPONENT, "clearAddedSipMessageHeaders", resultValue)
+            result(nil)
         case .removeUser:
             PortsipLogger.logCall(PortsipPlugin.COMPONENT, "removeUser", nil)
             let resultValue = PortsipController.shared.removeUser()

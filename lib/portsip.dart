@@ -23,6 +23,9 @@ class PortsipStateException implements Exception {
   String toString() => 'PortsipStateException: $message';
 }
 
+/// An RFC 3261 token — the characters a SIP header name may use.
+final _sipToken = RegExp(r"^[A-Za-z0-9.!%*_+`'~-]+$");
+
 /// Represents the lifecycle state of the PortSIP SDK.
 enum PortsipState {
   /// SDK has not been initialized yet.
@@ -742,10 +745,13 @@ class Portsip {
 
   /// Set the instance ID published as the `+sip.instance` Contact parameter
   ///
-  /// [instanceId] - A URN identifying this endpoint (RFC 5626), e.g.
-  /// `urn:uuid:...`. It must be unique per device and stay the same for the
-  /// lifetime of the install, so the server recognises the same endpoint
-  /// across re-registrations and network changes.
+  /// [instanceId] - A UUID, e.g. `3F2504E0-4F89-11D3-9A0C-0305E82C3301`. The
+  /// SDK publishes it as `+sip.instance="<urn:uuid:...>"`, adding the URN
+  /// wrapping itself, and silently ignores a value that already has it (0 is
+  /// still returned, and the SDK's own id goes out instead) — so a
+  /// `urn:uuid:` prefix or `<>` passed here is stripped first. It must be
+  /// unique per device and stay the same across re-registrations and network
+  /// changes, so the server recognises the same endpoint.
   ///
   /// This should be called after initialize() and before register(). The SDK
   /// generates an instance ID of its own if this is never called.
@@ -754,7 +760,82 @@ class Portsip {
   /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
   Future<int> setInstanceId({required String instanceId}) async {
     _checkInitialized();
-    return await PortsipPlatform.instance.setInstanceId(instanceId: instanceId);
+    final uuid = instanceId
+        .trim()
+        .replaceAll(RegExp(r'^<|>$'), '')
+        .replaceFirst(RegExp(r'^urn:uuid:', caseSensitive: false), '');
+    return await PortsipPlatform.instance.setInstanceId(instanceId: uuid);
+  }
+
+  /// Add a custom header to outgoing SIP messages
+  ///
+  /// The SDK stamps added headers onto each message as it is *sent*, not when
+  /// it is built, and keeps them until they are removed or cleared — the
+  /// plugin never clears them itself, not even on unRegister() or
+  /// removeUser().
+  ///
+  /// [sessionId] - Only messages of this session carry the header. -1 adds it
+  /// to every session's messages and to session-less ones such as REGISTER.
+  /// A call's session id is only known once [makeCall] has returned, and its
+  /// INVITE may not be sent yet by then, so a header for the *initial* INVITE
+  /// has to be added with -1 before [makeCall] and kept until a response to
+  /// the call proves the INVITE went out. See the README.
+  ///
+  /// [methodName] - Only messages with this method carry it, e.g. `INVITE`,
+  /// `REGISTER`, `BYE`. `ALL` adds it to every method.
+  ///
+  /// [msgType] - Requests (the default), responses, or both.
+  ///
+  /// Returns the added-header id (> 0) to pass to
+  /// [removeAddedSipMessageHeader], or a negative error code.
+  ///
+  /// Throws [ArgumentError] if [headerName] is not a SIP token or
+  /// [headerValue] contains CR or LF, which would inject header lines.
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> addSipMessageHeader({
+    required int sessionId,
+    required String methodName,
+    PortsipSipMessageType msgType = PortsipSipMessageType.requests,
+    required String headerName,
+    required String headerValue,
+  }) async {
+    _checkInitialized();
+    if (!_sipToken.hasMatch(headerName)) {
+      throw ArgumentError.value(headerName, 'headerName', 'not a SIP token');
+    }
+    if (headerValue.contains(RegExp(r'[\r\n]'))) {
+      throw ArgumentError.value(headerValue, 'headerValue', 'contains CR/LF');
+    }
+    return await PortsipPlatform.instance.addSipMessageHeader(
+      sessionId: sessionId,
+      methodName: methodName,
+      msgType: msgType,
+      headerName: headerName,
+      headerValue: headerValue,
+    );
+  }
+
+  /// Remove a header added by [addSipMessageHeader]
+  ///
+  /// [addedSipMessageId] - The id [addSipMessageHeader] returned.
+  /// Returns 0 if successful, error code otherwise.
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<int> removeAddedSipMessageHeader({
+    required int addedSipMessageId,
+  }) async {
+    _checkInitialized();
+    return await PortsipPlatform.instance.removeAddedSipMessageHeader(
+      addedSipMessageId: addedSipMessageId,
+    );
+  }
+
+  /// Remove every header added by [addSipMessageHeader]
+  ///
+  /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
+  Future<void> clearAddedSipMessageHeaders() async {
+    _checkInitialized();
+    await PortsipPlatform.instance.clearAddedSipMessageHeaders();
   }
 
   /// Remove the account loaded by register()
