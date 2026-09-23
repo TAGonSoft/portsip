@@ -48,11 +48,26 @@ class MethodChannelPortsip extends PortsipPlatform {
   /// Whether the plugin has been disposed.
   bool _isDisposed = false;
 
+  /// Argument keys whose values are never printed — see [_redactArgs].
+  static const _secretArgs = {'password', 'licenseKey'};
+
   /// Helper to log method calls
   void _logCall(String method, [Map<String, dynamic>? args]) {
     if (!_logsEnabled) return;
-    debugPrint('$_tag ▶ $method${args != null ? ' | args: $args' : ''}');
+    final printable = args != null ? ' | args: ${_redactArgs(args)}' : '';
+    debugPrint('$_tag ▶ $method$printable');
   }
+
+  /// The arguments with secrets replaced by their length. `register` carries
+  /// the SIP password and `setLicenseKey` the license key; logging is on in
+  /// release builds too, so both would otherwise sit in the device log — and
+  /// a password copied out of a log pasted into a ticket still works.
+  Map<String, dynamic> _redactArgs(Map<String, dynamic> args) => {
+    for (final entry in args.entries)
+      entry.key: _secretArgs.contains(entry.key)
+          ? '<redacted, ${entry.value is String ? (entry.value as String).length : 0} chars>'
+          : entry.value,
+  };
 
   /// Helper to log method responses
   void _logResponse(String method, dynamic result) {

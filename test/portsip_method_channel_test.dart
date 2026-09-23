@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portsip/models/audio_codec.dart';
@@ -2346,6 +2347,75 @@ void main() {
         dtmfMethod: 2,
       );
       expect((methodCalls.last.arguments as Map)['dtmfMethod'], 2);
+    });
+  });
+
+  group('log redaction', () {
+    late List<String> logs;
+
+    setUp(() {
+      logs = [];
+      final original = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) logs.add(message);
+      };
+      addTearDown(() => debugPrint = original);
+      platform.setLogsEnabled(enabled: true);
+      methodCalls.clear();
+    });
+
+    test('register logs the call without the password', () async {
+      await platform.register(
+        account: SipAccount(
+          userName: 'test_user',
+          password: 'super-secret-pw',
+          sipServer: 'sip.example.com',
+          sipServerPort: 5060,
+          stunServer: 'stun.example.com',
+          stunServerPort: 3478,
+        ),
+      );
+
+      expect(logs.where((l) => l.contains('▶ register')), isNotEmpty);
+      expect(logs.where((l) => l.contains('super-secret-pw')), isEmpty);
+      // The length is kept: enough to tell an empty password from a wrong one.
+      expect(logs.where((l) => l.contains('<redacted, 15 chars>')), isNotEmpty);
+      // Redacting the log must not touch what goes over the channel.
+      expect(
+        (methodCalls.single.arguments as Map)['password'],
+        'super-secret-pw',
+      );
+    });
+
+    test('register still logs the rest of the account', () async {
+      await platform.register(
+        account: SipAccount(
+          userName: 'test_user',
+          password: 'super-secret-pw',
+          sipServer: 'sip.example.com',
+          sipServerPort: 5060,
+          stunServer: 'stun.example.com',
+          stunServerPort: 3478,
+        ),
+      );
+
+      final logged = logs.firstWhere((l) => l.contains('▶ register'));
+      expect(logged, contains('test_user'));
+      expect(logged, contains('sip.example.com'));
+    });
+
+    test('setLicenseKey logs the call without the key', () async {
+      await platform.setLicenseKey(licenseKey: 'PORTSIP-LICENSE-KEY-2024');
+
+      expect(logs.where((l) => l.contains('▶ setLicenseKey')), isNotEmpty);
+      expect(
+        logs.where((l) => l.contains('PORTSIP-LICENSE-KEY-2024')),
+        isEmpty,
+      );
+      expect(
+        (methodCalls.single.arguments as Map)['licenseKey'],
+        'PORTSIP-LICENSE-KEY-2024',
+      );
     });
   });
 }

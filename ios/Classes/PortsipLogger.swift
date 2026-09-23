@@ -29,11 +29,29 @@ class PortsipLogger {
         print("\(TAG) [\(component)] ❌ \(message)")
     }
 
+    /// Argument keys whose values are never printed — see `redactArgs`.
+    private static let secretArgs: Set<String> = ["password", "licenseKey"]
+
+    /// The arguments with secrets replaced by their length. `register` carries
+    /// the SIP password and `setLicenseKey` the license key; logging is on in
+    /// release builds too, so both would otherwise sit in the device log — and
+    /// a password copied out of a log pasted into a ticket still works.
+    private static func redactArgs(_ args: [String: Any]) -> [String: Any] {
+        args.reduce(into: [String: Any]()) { redacted, entry in
+            guard secretArgs.contains(entry.key) else {
+                redacted[entry.key] = entry.value
+                return
+            }
+            let length = (entry.value as? String)?.count ?? 0
+            redacted[entry.key] = "<redacted, \(length) chars>"
+        }
+    }
+
     /// Log method call: ▶ methodName | args: {...}
     static func logCall(_ component: String, _ method: String, _ args: [String: Any]? = nil) {
         guard isEnabled else { return }
         if let args = args {
-            print("\(TAG) [\(component)] ▶ \(method) | args: \(args)")
+            print("\(TAG) [\(component)] ▶ \(method) | args: \(redactArgs(args))")
         } else {
             print("\(TAG) [\(component)] ▶ \(method)")
         }

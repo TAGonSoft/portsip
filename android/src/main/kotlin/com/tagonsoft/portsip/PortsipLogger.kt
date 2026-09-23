@@ -36,10 +36,28 @@ object PortsipLogger {
         if (isEnabled) Log.e(TAG, "[$component] $message", throwable)
     }
 
+    /** Argument keys whose values are never printed — see [redactArgs]. */
+    private val SECRET_ARGS = setOf("password", "licenseKey")
+
+    /**
+     * The arguments with secrets replaced by their length. `register` carries
+     * the SIP password and `setLicenseKey` the license key; logging is on in
+     * release builds too, so both would otherwise sit in Logcat — and a
+     * password copied out of a log pasted into a ticket still works.
+     */
+    private fun redactArgs(args: Map<String, Any?>): Map<String, Any?> =
+        args.mapValues { (key, value) ->
+            if (key in SECRET_ARGS) {
+                "<redacted, ${(value as? String)?.length ?: 0} chars>"
+            } else {
+                value
+            }
+        }
+
     /** Log method call: ▶ methodName | args: {...} */
     fun logCall(component: String, method: String, args: Map<String, Any?>? = null) {
         if (!isEnabled) return
-        val msg = if (args != null) "▶ $method | args: $args" else "▶ $method"
+        val msg = if (args != null) "▶ $method | args: ${redactArgs(args)}" else "▶ $method"
         Log.d(TAG, "[$component] $msg")
     }
 
