@@ -823,6 +823,16 @@ class PortsipController: NSObject {
             let pendingCallId = arguments["pendingCallId"] as? Int
             let keepSystemCallOnFailure = arguments["keepSystemCallOnFailure"] as? Bool ?? false
 
+            // Its CallKit call is already gone (refused, or ended from the
+            // system UI) — don't send an INVITE nobody can hear.
+            if let pendingCallId = pendingCallId,
+               PortsipCallKitProvider.shared.isCallKitEnabled,
+               !PortsipCallKitProvider.shared.hasCall(for: pendingCallId) {
+                PortsipLogger.w("Controller", "pending call \(pendingCallId) gone before INVITE — not dialing")
+                cancelSessionlessWatchdog(pendingCallId)
+                return -1
+            }
+
             // A leftover system call from a previous call would make this one
             // CallKit's second call — clear it before dialing.
             reapSessionlessCalls(except: pendingCallId)
@@ -886,7 +896,8 @@ class PortsipController: NSObject {
 
     /// Starts a CallKit call for the callee without sending the INVITE. The
     /// call is keyed by a negative pending id until makeCall(pendingCallId:)
-    /// rebinds it to the SIP session. Returns 0 when CallKit is unavailable.
+    /// rebinds it to the SIP session. Returns 0 when CallKit is unavailable,
+    /// -1 when CallKit refused the call or it was ended before it was up.
     ///
     /// Completes only once CallKit has activated the audio session and the
     /// SDK audio engine is running (see activateAudioSession) — the whole
@@ -909,6 +920,13 @@ class PortsipController: NSObject {
         let started = Date()
         armPendingActivation(pendingCallId) { activated in
             let ms = Int(Date().timeIntervalSince(started) * 1000)
+            // Refused or ended before activation: its end event may still be
+            // in flight, so the result has to say it.
+            guard PortsipCallKitProvider.shared.hasCall(for: pendingCallId) else {
+                PortsipLogger.w("Controller", "pending call \(pendingCallId) ended after \(ms) ms, before it was up")
+                completion(-1)
+                return
+            }
             if activated {
                 PortsipLogger.d("Controller", "pending call \(pendingCallId): audio session active after \(ms) ms")
             } else {

@@ -341,8 +341,9 @@ class Portsip {
   /// [callee] - The number the system UI shows and dials.
   /// [displayName] - Name the system call UI shows for the callee.
   ///
-  /// Returns a negative pending call id (never a valid SDK session id), or 0
-  /// if the system call could not be started.
+  /// Returns a negative pending call id (never a valid SDK session id), 0 if
+  /// the system call could not be started, or -1 if the system refused it or
+  /// it was ended before it was up (iOS only) — don't dial then.
   ///
   /// Throws [PortsipStateException] if the SDK is not initialized or has been disposed.
   Future<int> beginOutgoingCall({

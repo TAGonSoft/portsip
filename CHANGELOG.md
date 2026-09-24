@@ -4,7 +4,9 @@
 * **Feature**: two-phase outgoing calls. `beginOutgoingCall({callee,
 displayName})` starts the system call and returns a negative pending id without
 sending the INVITE; `makeCall(..., pendingCallId:)` dials into it;
-`cancelOutgoingCall({pendingCallId})` ends it undialed.
+`cancelOutgoingCall({pendingCallId})` ends it undialed. It returns 0 when the
+system call could not be started, and -1 (iOS) when the system refused it or
+ended it before it was up — `makeCall` then sends no INVITE and returns -1 too.
 * **Feature**: `makeCall(..., keepSystemCallOnFailure: true)` keeps the system
 call up after a SIP failure until `endSystemCall({sessionId})`.
 * **Safety**: a system call with no SIP session behind it is now self-limiting —

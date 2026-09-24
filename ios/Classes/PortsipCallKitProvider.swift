@@ -315,6 +315,11 @@ class PortsipCallKitProvider: NSObject {
         return sessionLock.sync { sessionToUUID.count }
     }
 
+    /// True while CallKit tracks a call for the session (or pending id).
+    func hasCall(for sessionId: Int) -> Bool {
+        return getUUIDThreadSafe(for: sessionId) != nil
+    }
+
     /// Thread-safe removal of all sessions
     private func removeAllSessions() {
         sessionLock.sync {

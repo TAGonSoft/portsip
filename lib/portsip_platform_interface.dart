@@ -141,7 +141,9 @@ abstract class PortsipPlatform extends PlatformInterface {
   }
 
   /// Starts a system call (CallKit / ConnectionService) for [callee] without
-  /// sending the INVITE. Returns a negative pending call id, or 0 on failure.
+  /// sending the INVITE. Returns a negative pending call id, 0 on failure, or
+  /// -1 if the system refused or ended it before it was up (iOS only) — don't
+  /// dial then.
   Future<int> beginOutgoingCall({
     required String callee,
     String? displayName,

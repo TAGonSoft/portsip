@@ -72,9 +72,9 @@ class MethodChannelPortsip extends PortsipPlatform {
   /// Helper to log method responses
   void _logResponse(String method, dynamic result) {
     if (!_logsEnabled) return;
-    // beginOutgoingCall hands out negative pending ids by design (0 = failed).
+    // beginOutgoingCall hands out negative pending ids by design (0 / -1 = failed).
     final failed = method == 'beginOutgoingCall'
-        ? result == 0
+        ? result == 0 || result == -1
         : result is int && result < 0;
     final status = failed ? '❌' : '✓';
     debugPrint('$_tag ◀ $method | $status result: $result');
@@ -268,7 +268,8 @@ class MethodChannelPortsip extends PortsipPlatform {
   ///
   /// Invokes the native 'beginOutgoingCall' method via MethodChannel.
   ///
-  /// Returns a negative pending call id, or 0 on failure.
+  /// Returns a negative pending call id, 0 on failure, or -1 if the system
+  /// refused or ended it before it was up (iOS only).
   @override
   Future<int> beginOutgoingCall({
     required String callee,

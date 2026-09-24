@@ -64,8 +64,12 @@ object PortsipLogger {
     /** Log method response: ◀ methodName | ✓/❌ result: value */
     fun logResponse(component: String, method: String, result: Any?) {
         if (!isEnabled) return
-        // beginOutgoingCall hands out negative pending ids by design (0 = failed).
-        val failed = if (method == "beginOutgoingCall") result == 0 else result is Int && result < 0
+        // beginOutgoingCall hands out negative pending ids by design (0 / -1 = failed).
+        val failed = if (method == "beginOutgoingCall") {
+            result == 0 || result == -1
+        } else {
+            result is Int && result < 0
+        }
         val status = if (failed) "❌" else "✓"
         Log.d(TAG, "[$component] ◀ $method | $status result: $result")
     }
