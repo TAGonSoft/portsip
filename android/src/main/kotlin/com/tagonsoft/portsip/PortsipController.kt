@@ -1676,7 +1676,6 @@ class PortsipController private constructor() : OnPortSIPEvent {
      * - Disposes ConnectionService
      * - Unregisters from the SIP server
      * - Uninitializes the SDK
-     * - Clears the event listener
      * - Releases SDK instance and context references
      */
     fun dispose() = synchronized(sdkLock) {
@@ -1695,8 +1694,7 @@ class PortsipController private constructor() : OnPortSIPEvent {
         portSipSdk?.unRegisterServer(0)
         portSipSdk?.unInitialize()
 
-        // Clear event listener
-        portSipSdk?.setOnPortSIPEvent(null)
+        // Listener stays set, as in unInitialize().
 
         // Release SDK instance
         portSipSdk = null
@@ -1724,7 +1722,8 @@ class PortsipController private constructor() : OnPortSIPEvent {
         portSipSdk?.stopPlayingFileLocally()
         portSipSdk?.unRegisterServer(0)
         portSipSdk?.unInitialize()
-        portSipSdk?.setOnPortSIPEvent(null)
+        // Listener stays set: the SDK's main-thread handler still delivers
+        // callbacks queued by the calls above, and it doesn't null-check.
         portSipSdk = null
 
         PortsipLogger.d(COMPONENT, "PortsipController unInitialized")
