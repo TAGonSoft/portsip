@@ -1,5 +1,7 @@
 # PortSIP Flutter Plugin
 
+Built and maintained by [TAGonSoft](https://tagonsoft.com), an AI-native development and AI integrations studio that also ships Flutter apps for iOS, Android and web.
+
 > **⚠️ IMPORTANT DISCLAIMER**
 >
 > This is an **unofficial, community-developed** Flutter wrapper for the [PortSIP VoIP SDK](https://www.portsip.com/download-portsip-voip-sdk/).
